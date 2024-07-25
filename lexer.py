@@ -1,6 +1,6 @@
 # Scans a C File and return a list of tokens
 
-from enum import Enum 
+from enum import Enum, auto 
 import re
 
 class Token:
@@ -11,16 +11,17 @@ class Token:
         return f"Token({self.type}, {self.value})"
 
 class TokenType(Enum):
-    LEFT_BRACE = "{"
-    RIGHT_BRACE = "}"
-    LEFT_PAREN = "("
-    RIGHT_PAREN = ")"
-    SEMICOLON = ";"
-    INT = "int"
-    RETURN = "return"
-    IDENTIFIER = "IDENTIFIER"
-    LITERAL = "LITERAL"
-    WHITESPACE = "WHITESPACE"
+    LEFT_BRACE = auto()
+    RIGHT_BRACE = auto()
+    LEFT_PAREN = auto()
+    RIGHT_PAREN = auto()
+    SEMICOLON = auto()
+    INT = auto()
+    RETURN = auto()
+    IDENTIFIER = auto()
+    LITERAL = auto()
+    WHITESPACE = auto()
+    EOF = auto()
 
 def tokenize(text):
     tokens = []
@@ -38,26 +39,20 @@ def tokenize(text):
     
     for match in re.finditer(pattern, text):
         value = match.group()
-        if value in [e.value for e in TokenType if isinstance(e.value, str)]:
-            token_type = TokenType(value)
-        elif value.isdigit():
-            token_type = TokenType.LITERAL 
-        elif value.isidentifier():
-            token_type = TokenType.IDENTIFIER 
-        elif value.isspace():
-            token_type = TokenType.WHITESPACE 
-        else:
-            raise ValueError(f"Unexpected Token: {value}")
+        if value == "{":            token_type = TokenType.LEFT_BRACE 
+        elif value == "}":          token_type = TokenType.RIGHT_BRACE 
+        elif value == "(":          token_type = TokenType.LEFT_PAREN 
+        elif value == ")":          token_type = TokenType.RIGHT_PAREN 
+        elif value == ";":          token_type = TokenType.SEMICOLON 
+        elif value == "int":        token_type = TokenType.INT 
+        elif value == "return":     token_type = TokenType.RETURN 
+        elif value.isdigit():       token_type = TokenType.LITERAL 
+        elif value.isidentifier():  token_type = TokenType.IDENTIFIER 
+        elif value.isspace():       token_type = TokenType.WHITESPACE 
+        else:                       raise ValueError(f"Unexpected Token: {value}")
 
         if token_type != TokenType.WHITESPACE:
             tokens.append(Token(token_type, value))
     
+    tokens.append(Token(TokenType.EOF, "EOF"))
     return tokens
-
-
-with open("main.c", "r") as f:
-    text = f.read()
-
-tokens = tokenize(text)
-for token in tokens:
-    print(token)
