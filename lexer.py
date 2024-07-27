@@ -33,7 +33,7 @@ def tokenize(text):
         r";", # SEMICOLON
         r"\bint\b", # INT
         r"\b[a-zA-Z]\w*\b", # IDENTIFIER 
-        r"\b[0-9]\b", # LITERAL 
+        r"\b[0-9]+\b", # LITERAL 
         r"\s+" # WHITESPACE
         ])
     

@@ -7,20 +7,27 @@
 
 from lexer import TokenType
 
-class Program:
+class ASTNode:
+    pass
+
+class Program(ASTNode):
     def __init__(self, function):
         self.function = function 
 
-class Function:
+class Function(ASTNode):
     def __init__(self, return_type, name, parameters, body):
         self.return_type = return_type 
         self.name = name 
         self.parameters = parameters 
         self.body = body 
 
-class ReturnStatement:
+class ReturnStatement(ASTNode):
     def __init__(self, expression):
         self.expression = expression 
+
+class Literal(ASTNode):
+    def __init__(self, value):
+        self.value = value
 
 class Parser:
     def __init__(self, tokens):
@@ -29,7 +36,7 @@ class Parser:
 
     def peek(self): return self.tokens[self.current]
     def previous(self): return self.tokens[self.current - 1]
-    def is_at_end(self): return self.peek() == self.tokens[-1]
+    def is_at_end(self): return self.peek() == TokenType.EOF
     
     def advance(self):
         if not self.is_at_end():
@@ -67,7 +74,8 @@ class Parser:
         return Function("int", name, parameters, body)
 
     def parameter_list(self):
-        return 
+        params = []
+        return params
 
     def block(self):
         self.consume(TokenType.LEFT_BRACE, "Expected '{' before block.")
@@ -88,4 +96,53 @@ class Parser:
         return ReturnStatement(exp)
 
     def expression(self):
-        return self.consume(TokenType.LITERAL, "Expected expression.").value 
+        token = self.consume(TokenType.LITERAL, "Expected expression.")
+        return Literal(token.value)
+
+class ASTPrinter:
+    def __init__(self):
+        self.indent_level = 0
+
+    def print(self, node):
+        method_name = f"print_{type(node).__name__}"
+        printer = getattr(self, method_name, self.generic_print)
+        return printer(node)
+
+    def indented(self, string):
+        return "  " * self.indent_level + string
+
+    def generic_print(self, node):
+        return self.indented(f"{type(node).__name__}")
+
+    def print_Program(self, node):
+        result = self.indented("Program\n")
+        self.indent_level += 1
+        result += self.print(node.function)
+        self.indent_level -= 1
+        return result 
+
+    def print_Function(self, node):
+        result = self.indented(f"Function: {node.return_type} {node.name}\n")
+        self.indent_level += 1
+        if node.parameters:
+            result += self.indented("Parameters:\n")
+            self.indent_level += 1
+            for param in node.parameters:
+                result += self.indented(f"{param}\n")
+            self.indent_level -= 1
+        result += self.indented("Body:\n")
+        self.indent_level += 1
+        for statement in node.body:
+            result += self.print(statement) + "\n"
+        self.indent_level -= 1
+        return result 
+
+    def print_ReturnStatement(self, node):
+        result = self.indented("Return:\n")
+        self.indent_level += 1
+        result += self.print(node.expression)
+        self.indent_level -= 1
+        return result 
+
+    def print_Literal(self, node):
+        return self.indented(f"Literal: {node.value}")

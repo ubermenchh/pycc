@@ -13,4 +13,5 @@ for token in tokens:
 parser = Parser(tokens)
 ast = parser.parse()
 
-print(ast)
+printer = ASTPrinter()
+print(printer.print(ast))
