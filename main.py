@@ -14,4 +14,9 @@ parser = Parser(tokens)
 ast = parser.parse()
 
 printer = ASTPrinter()
+generator = ASMGenerator()
+
 print(printer.print(ast))
+asm_code = generator.generate(ast)
+
+print(asm_code)

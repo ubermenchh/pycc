@@ -22,6 +22,9 @@ class TokenType(Enum):
     LITERAL = auto()
     WHITESPACE = auto()
     EOF = auto()
+    NEGATION = auto()
+    BITWISE_COMPLEMENT = auto()
+    LOGICAL_NEGATION = auto()
 
 def tokenize(text):
     tokens = []
@@ -34,7 +37,10 @@ def tokenize(text):
         r"\bint\b", # INT
         r"\b[a-zA-Z]\w*\b", # IDENTIFIER 
         r"\b[0-9]+\b", # LITERAL 
-        r"\s+" # WHITESPACE
+        r"\s+", # WHITESPACE
+        r"-", # NEGATION 
+        r"~", # BITWISE_COMPLEMENT 
+        r"!", # LOGICAL_NEGATION 
         ])
     
     for match in re.finditer(pattern, text):
@@ -46,6 +52,9 @@ def tokenize(text):
         elif value == ";":          token_type = TokenType.SEMICOLON 
         elif value == "int":        token_type = TokenType.INT 
         elif value == "return":     token_type = TokenType.RETURN 
+        elif value == "-":          token_type = TokenType.NEGATION 
+        elif value == "~":          token_type = TokenType.BITWISE_COMPLEMENT 
+        elif value == "!":          token_type = TokenType.LOGICAL_NEGATION
         elif value.isdigit():       token_type = TokenType.LITERAL 
         elif value.isidentifier():  token_type = TokenType.IDENTIFIER 
         elif value.isspace():       token_type = TokenType.WHITESPACE 

@@ -29,6 +29,11 @@ class Literal(ASTNode):
     def __init__(self, value):
         self.value = value
 
+class UnaryOps(ASTNode):
+    def __init__(self, op, exp):
+        self.op = op
+        self.exp = exp
+
 class Parser:
     def __init__(self, tokens):
         self.tokens = tokens 
@@ -94,10 +99,24 @@ class Parser:
         exp = self.expression()
         self.consume(TokenType.SEMICOLON, "Expected ';' after return statement.")
         return ReturnStatement(exp)
-
+    
     def expression(self):
-        token = self.consume(TokenType.LITERAL, "Expected expression.")
-        return Literal(token.value)
+        return self.unary()
+
+    def unary(self):
+        if self.match(TokenType.NEGATION, TokenType.LOGICAL_NEGATION, TokenType.BITWISE_COMPLEMENT):
+            op = self.previous()
+            right = self.unary()
+            return UnaryOps(op, right)
+        return self.primary()
+
+    def primary(self):
+        if self.match(TokenType.LITERAL):
+            return Literal(self.previous().value)
+        self.consume(TokenType.LEFT_PAREN, "Expected '(' before expression.")
+        expr = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expected ')' after expression.")
+        return expr
 
 class ASTPrinter:
     def __init__(self):
@@ -146,3 +165,64 @@ class ASTPrinter:
 
     def print_Literal(self, node):
         return self.indented(f"Literal: {node.value}")
+
+    def print_UnaryOps(self, node):
+        result = self.indented(f"UnaryOps: {node.op.type.name}") + "\n"
+        result += self.print(node.exp)
+        return result
+
+class ASMGenerator:
+    def __init__(self):
+        self.assembly = []
+
+    def generate(self, node):
+        method_name = f"generate_{type(node).__name__}"
+        generator = getattr(self, method_name, self.generic_gen)
+        return generator(node)
+
+    def generic_gen(self, node):
+        raise NotImplementedError(f"Generation not implemented for {type(node).__name__}")
+
+    def generate_Program(self, node):
+        self.generate(node.function)
+        return "\n".join(self.assembly)
+
+    def generate_Function(self, node):
+        self.assembly.append(f"global {node.name}")
+        self.assembly.append(f"{node.name}:")
+        self.assembly.append("    push ebp")
+        self.assembly.append("    mov ebp, esp")
+        
+        for statement in node.body:
+            self.generate(statement)
+
+    def generate_ReturnStatement(self, node):
+        self.generate(node.expression)
+        self.assembly.append("    pop eax")
+        self.assembly.append("    mov esp, ebp")
+        self.assembly.append("    pop ebp")
+        self.assembly.append("    ret")
+
+    def generate_Literal(self, node):
+        self.assembly.append(f"    push {node.value}")
+
+    def generate_UnaryOps(self, node):
+        self.generate(node.exp)
+        op_type = node.op.type 
+
+        if op_type == TokenType.NEGATION:
+            self.assembly.append("    pop eax")
+            self.assembly.append("    neg eax")
+            self.assembly.append("    push eax")
+        elif op_type == TokenType.LOGICAL_NEGATION:
+            self.assembly.append("    pop eax")
+            self.assembly.append("    cmp eax, 0")
+            self.assembly.append("    sete al")
+            self.assembly.append("    movzx eax, al")
+            self.assembly.append("    push eax")
+        elif op_type == TokenType.BITWISE_COMPLEMENT:
+            self.assembly.append("    pop eax")
+            self.assembly.append("    not eax")
+            self.assembly.append("    push eax")
+        else:
+            raise NotImplementedError(f"Unary operation {op_type} not implemented.")
