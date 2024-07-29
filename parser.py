@@ -6,7 +6,7 @@
 # <exp> ::= <int>
 
 from os import wait
-from lexer import TokenType
+from tokentype import TokenType
 
 class ASTNode:
     pass
@@ -108,6 +108,41 @@ class Parser:
         return ReturnStatement(exp)
     
     def expression(self):
+        and_exp = self.logical_and_expression()
+        while self.match(TokenType.OR):
+            op = self.previous()
+            next_and_exp = self.logical_and_expression()
+            and_exp = BinaryOps(op, and_exp, next_and_exp)
+        return and_exp
+
+    def logical_and_expression(self):
+        eq_exp = self.equality_expression()
+        while self.match(TokenType.AND):
+            op = self.previous()
+            next_eq_exp = self.equality_expression()
+            eq_exp = BinaryOps(op, eq_exp, next_eq_exp)
+        return eq_exp
+
+    def equality_expression(self):
+        rel_exp = self.relational_expression()
+        while self.match(TokenType.NOT_EQUAL, TokenType.EQUAL):
+            op = self.previous()
+            next_rel_exp = self.relational_expression()
+            rel_exp = BinaryOps(op, rel_exp, next_rel_exp)
+        return rel_exp
+
+    def relational_expression(self):
+        add_exp = self.additve_expression()
+        while self.match(TokenType.LESS_THAN, 
+                         TokenType.GREATER_THAN,
+                         TokenType.LESS_THAN_OR_EQUAL,
+                         TokenType.GREATER_THAN_OR_EQUAL):
+            op = self.previous()
+            next_add_exp = self.additve_expression()
+            add_exp = BinaryOps(op, add_exp, next_add_exp)
+        return add_exp
+
+    def additve_expression(self):
         term = self.term()
         while self.match(TokenType.PLUS, TokenType.MINUS):
             op = self.previous()
@@ -285,6 +320,29 @@ class ASMGenerator:
         elif op_type == TokenType.SLASH:
             self.assembly.append("    cqo") # sign-extend eax into edx 
             self.assembly.append("    idiv rbx")
+        elif op_type == TokenType.OR:
+            self.assembly.append("    or rax, rbx")
+        elif op_type == TokenType.AND:
+            self.assembly.append("    and rax, rbx")
+        elif op_type in [
+                TokenType.EQUAL, TokenType.NOT_EQUAL, 
+                TokenType.LESS_THAN, TokenType.LESS_THAN_OR_EQUAL, 
+                TokenType.GREATER_THAN, TokenType.GREATER_THAN_OR_EQUAL
+            ]:
+            self.assembly.append("    cmp rax, rbx")
+            if op_type == TokenType.EQUAL:
+                self.assembly.append("    sete al")
+            elif op_type == TokenType.NOT_EQUAL:
+                self.assembly.append("    setne al")
+            elif op_type == TokenType.LESS_THAN:
+                self.assembly.append("    setl al")
+            elif op_type == TokenType.LESS_THAN_OR_EQUAL:
+                self.assembly.append("    setle al")
+            elif op_type == TokenType.GREATER_THAN:
+                self.assembly.append("    setg al")
+            elif op_type == TokenType.GREATER_THAN_OR_EQUAL:
+                self.assembly.append("    setge al")
+            self.assembly.append("    movzx rax, al")
         else:
             raise NotImplementedError(f"Binary operation {op_type} not implemented.")
 

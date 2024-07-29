@@ -1,8 +1,7 @@
 # Scans a C File and return a list of tokens
 
-from enum import Enum, auto 
 import re
-
+from tokentype import TokenType
 
 class Token:
     def __init__(self, type, value):
@@ -11,24 +10,7 @@ class Token:
     def __repr__(self):
         return f"Token({self.type}, {self.value})"
 
-class TokenType(Enum):
-    LEFT_BRACE = auto()
-    RIGHT_BRACE = auto()
-    LEFT_PAREN = auto()
-    RIGHT_PAREN = auto()
-    SEMICOLON = auto()
-    INT = auto()
-    RETURN = auto()
-    IDENTIFIER = auto()
-    NUMBER = auto()
-    WHITESPACE = auto()
-    EOF = auto()
-    MINUS = auto()
-    BITWISE_COMPLEMENT = auto()
-    LOGICAL_NEGATION = auto()
-    PLUS = auto()
-    STAR = auto()
-    SLASH = auto()
+
 
 def tokenize(text):
     tokens = []
@@ -39,6 +21,7 @@ def tokenize(text):
         r"\)", # RIGHT_PAREN 
         r";", # SEMICOLON
         r"\bint\b", # INT
+        r"\breturn\b", # RETURN
         r"\b[a-zA-Z]\w*\b", # IDENTIFIER 
         r"\b[0-9]+\b", # NUMBER
         r"\s+", # WHITESPACE
@@ -48,6 +31,14 @@ def tokenize(text):
         r"\+", # PLUS 
         r"\*", # STAR 
         r"/", # SLASH
+        r"&&", # AND
+        r"\|\|", # OR 
+        r"==", # EQUAL 
+        r"!=", # NOT_EQUAL
+        r"<", # LESS_THAN 
+        r"<=", # LESS_THAN_OR_EQUAL
+        r">", # GREATER_THAN
+        r">=", # GREATER_THAN_OR_EQUAL
     ])
     
     for match in re.finditer(pattern, text):
@@ -65,6 +56,14 @@ def tokenize(text):
         elif value == "+":          token_type = TokenType.PLUS 
         elif value == "*":          token_type = TokenType.STAR 
         elif value == "/":          token_type = TokenType.SLASH
+        elif value == "&&":         token_type = TokenType.AND 
+        elif value == "||":         token_type = TokenType.OR 
+        elif value == "==":         token_type = TokenType.EQUAL 
+        elif value == "!=":         token_type = TokenType.NOT_EQUAL 
+        elif value == "<":          token_type = TokenType.LESS_THAN 
+        elif value == "<=":         token_type = TokenType.LESS_THAN_OR_EQUAL 
+        elif value == ">":          token_type = TokenType.GREATER_THAN 
+        elif value == ">=":         token_type = TokenType.GREATER_THAN_OR_EQUAL
         elif value.isdigit():       token_type = TokenType.NUMBER
         elif value.isidentifier():  token_type = TokenType.IDENTIFIER 
         elif value.isspace():       token_type = TokenType.WHITESPACE 
