@@ -39,6 +39,12 @@ def tokenize(text):
         r"<=", # LESS_THAN_OR_EQUAL
         r">", # GREATER_THAN
         r">=", # GREATER_THAN_OR_EQUAL
+        r"%", # PERCENT 
+        r"&", # BITWISE_AND
+        r"\|", # BITWISE_OR
+        r"^", # BITWISE_XOR 
+        r"<<", # BITWISE_SHIFT_LEFT
+        r">>", # BITWISE_SHIFT_RIGHT
     ])
     
     for match in re.finditer(pattern, text):
@@ -64,6 +70,12 @@ def tokenize(text):
         elif value == "<=":         token_type = TokenType.LESS_THAN_OR_EQUAL 
         elif value == ">":          token_type = TokenType.GREATER_THAN 
         elif value == ">=":         token_type = TokenType.GREATER_THAN_OR_EQUAL
+        elif value == "%":          token_type = TokenType.PERCENT 
+        elif value == "&":          token_type = TokenType.BITWISE_AND 
+        elif value == "|":          token_type = TokenType.BITWISE_OR 
+        elif value == "^":          token_type = TokenType.BITWISE_XOR 
+        elif value == "<<":         token_type = TokenType.BITWISE_SHIFT_LEFT 
+        elif value == ">>":         token_type = TokenType.BITWISE_SHIFT_RIGHT
         elif value.isdigit():       token_type = TokenType.NUMBER
         elif value.isidentifier():  token_type = TokenType.IDENTIFIER 
         elif value.isspace():       token_type = TokenType.WHITESPACE 

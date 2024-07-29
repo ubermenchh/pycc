@@ -73,10 +73,15 @@ class Parser:
         raise Exception(message)
 
     def parse(self): return self.program()
+    
     def program(self):
+        """ <program> ::= <function> """
+        
         return Program(self.function())
 
     def function(self):
+        """ <function> ::= "int" <id> "(" ")" "{" <statement> "}" """
+
         self.consume(TokenType.INT, "Expected 'int' as return type.")
         name = self.consume(TokenType.IDENTIFIER, "Expected function name.").value
         self.consume(TokenType.LEFT_PAREN, "Expected '(' after function name.")
@@ -98,6 +103,8 @@ class Parser:
         return statements 
     
     def statement(self):
+        """ <statement> ::= "return" <exp> ";" """
+
         if self.match(TokenType.RETURN):
             return self.return_statement()
         raise Exception("Expected statement")
@@ -108,14 +115,45 @@ class Parser:
         return ReturnStatement(exp)
     
     def expression(self):
-        and_exp = self.logical_and_expression()
+        """ <exp> ::= <logical-and-exp> { "||" <logical-and-exp> } """
+
+        return self.bitwise_or_expression()
+
+    def bitwise_or_expression(self):
+        exp = self.bitwise_xor_expression()
+        while self.match(TokenType.BITWISE_OR):
+            op = self.previous()
+            right = self.bitwise_xor_expression()
+            exp = BinaryOps(op, exp, right)
+        return exp 
+
+    def bitwise_xor_expression(self):
+        exp = self.bitwise_and_expression()
+        while self.match(TokenType.BITWISE_XOR):
+            op = self.previous()
+            right = self.bitwise_and_expression()
+            exp = BinaryOps(op, exp, right)
+        return exp 
+
+    def bitwise_and_expression(self):
+        exp = self.logical_or_expression()
+        while self.match(TokenType.BITWISE_AND):
+            op = self.previous()
+            right = self.logical_or_expression()
+            exp = BinaryOps(op, exp, right)
+        return exp
+
+    def logical_or_expression(self):
+        exp = self.logical_and_expression()
         while self.match(TokenType.OR):
             op = self.previous()
-            next_and_exp = self.logical_and_expression()
-            and_exp = BinaryOps(op, and_exp, next_and_exp)
-        return and_exp
+            right = self.logical_and_expression()
+            exp = BinaryOps(op, exp, right)
+        return exp
 
     def logical_and_expression(self):
+        """ <logical-and-exp> ::= <equality_exp> { "&&" <equality_exp> } """
+
         eq_exp = self.equality_expression()
         while self.match(TokenType.AND):
             op = self.previous()
@@ -124,6 +162,8 @@ class Parser:
         return eq_exp
 
     def equality_expression(self):
+        """ <equality_exp> ::= <relational_exp> { ("!=" | "==") <relational_exp> } """
+
         rel_exp = self.relational_expression()
         while self.match(TokenType.NOT_EQUAL, TokenType.EQUAL):
             op = self.previous()
@@ -132,17 +172,29 @@ class Parser:
         return rel_exp
 
     def relational_expression(self):
-        add_exp = self.additve_expression()
+        """ <relational_exp> ::= <additve_exp> { ("<" | ">" | "<=" | ">=") <additve_exp> } """
+
+        add_exp = self.shift_expression()
         while self.match(TokenType.LESS_THAN, 
                          TokenType.GREATER_THAN,
                          TokenType.LESS_THAN_OR_EQUAL,
                          TokenType.GREATER_THAN_OR_EQUAL):
             op = self.previous()
-            next_add_exp = self.additve_expression()
+            next_add_exp = self.shift_expression()
             add_exp = BinaryOps(op, add_exp, next_add_exp)
         return add_exp
 
+    def shift_expression(self):
+        exp = self.additve_expression()
+        while self.match(TokenType.BITWISE_SHIFT_LEFT, TokenType.BITWISE_SHIFT_RIGHT):
+            op = self.previous()
+            right = self.additve_expression()
+            exp = BinaryOps(op, exp, right)
+        return exp
+    
     def additve_expression(self):
+        """ <additve_exp> ::= <term> { ("+" | "-") <term> } """
+
         term = self.term()
         while self.match(TokenType.PLUS, TokenType.MINUS):
             op = self.previous()
@@ -151,6 +203,8 @@ class Parser:
         return term
 
     def term(self):
+        """ <term> ::= <factor> { ("*" | "/") <factor> } """
+
         factor = self.factor()
         while self.match(TokenType.STAR, TokenType.SLASH):
             op = self.previous()
@@ -159,6 +213,8 @@ class Parser:
         return factor
     
     def factor(self):
+        """ <factor> ::= "(" <exp> ")" | <unary_op> <factor> | <int> """
+
         if self.match(TokenType.LEFT_PAREN):
             exp = self.expression()
             self.consume(TokenType.RIGHT_PAREN, "Expected ')' after expression.")
@@ -173,6 +229,8 @@ class Parser:
             return print("Failed!")
 
     def unary(self):
+        """ <unary_op> ::= "!" | "~" | "-" """
+
         if self.match(TokenType.MINUS, TokenType.LOGICAL_NEGATION, TokenType.BITWISE_COMPLEMENT):
             op = self.previous()
             right = self.unary()
@@ -320,6 +378,22 @@ class ASMGenerator:
         elif op_type == TokenType.SLASH:
             self.assembly.append("    cqo") # sign-extend eax into edx 
             self.assembly.append("    idiv rbx")
+        elif op_type == TokenType.PERCENT:
+            self.assembly.append("    cqo")
+            self.assembly.append("    idiv rbx")
+            self.assembly.append("    mov rax, rdx") # remainder goes in rdx 
+        elif op_type == TokenType.BITWISE_AND:
+            self.assembly.append("    and rax, rbx")
+        elif op_type == TokenType.BITWISE_OR:
+            self.assembly.append("    or rax, rbx")
+        elif op_type == TokenType.BITWISE_XOR:
+            self.assembly.append("    xor rax, rbx")
+        elif op_type == TokenType.BITWISE_SHIFT_LEFT:
+            self.assembly.append("    mov rcx, rbx")
+            self.assembly.append("    shl rax, cl")
+        elif op_type == TokenType.BITWISE_SHIFT_RIGHT:
+            self.assembly.append("    mov rcx, rbx")
+            self.assembly.append("    shr rax, cl")
         elif op_type == TokenType.OR:
             self.assembly.append("    or rax, rbx")
         elif op_type == TokenType.AND:
