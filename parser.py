@@ -5,6 +5,7 @@
 # <statement> ::= "return" <exp> ";"
 # <exp> ::= <int>
 
+from os import wait
 from lexer import TokenType
 
 class ASTNode:
@@ -25,14 +26,20 @@ class ReturnStatement(ASTNode):
     def __init__(self, expression):
         self.expression = expression 
 
-class Literal(ASTNode):
+class Number(ASTNode):
     def __init__(self, value):
         self.value = value
 
 class UnaryOps(ASTNode):
-    def __init__(self, op, exp):
+    def __init__(self, op, right):
         self.op = op
-        self.exp = exp
+        self.right = right
+
+class BinaryOps(ASTNode):
+    def __init__(self, op, left, right):
+        self.op = op 
+        self.left = left 
+        self.right = right
 
 class Parser:
     def __init__(self, tokens):
@@ -101,18 +108,45 @@ class Parser:
         return ReturnStatement(exp)
     
     def expression(self):
-        return self.unary()
+        term = self.term()
+        while self.match(TokenType.PLUS, TokenType.MINUS):
+            op = self.previous()
+            next_term = self.term()
+            term = BinaryOps(op, term, next_term)
+        return term
+
+    def term(self):
+        factor = self.factor()
+        while self.match(TokenType.STAR, TokenType.SLASH):
+            op = self.previous()
+            next_factor = self.factor()
+            factor = BinaryOps(op, factor, next_factor)
+        return factor
+    
+    def factor(self):
+        if self.match(TokenType.LEFT_PAREN):
+            exp = self.expression()
+            self.consume(TokenType.RIGHT_PAREN, "Expected ')' after expression.")
+            return exp 
+        elif self.match(TokenType.LOGICAL_NEGATION, TokenType.BITWISE_COMPLEMENT, TokenType.MINUS):
+            op = self.previous()
+            factor = self.factor()
+            return UnaryOps(op, factor)
+        elif self.match(TokenType.NUMBER):
+            return Number(self.previous())
+        else:
+            return print("Failed!")
 
     def unary(self):
-        if self.match(TokenType.NEGATION, TokenType.LOGICAL_NEGATION, TokenType.BITWISE_COMPLEMENT):
+        if self.match(TokenType.MINUS, TokenType.LOGICAL_NEGATION, TokenType.BITWISE_COMPLEMENT):
             op = self.previous()
             right = self.unary()
             return UnaryOps(op, right)
         return self.primary()
 
     def primary(self):
-        if self.match(TokenType.LITERAL):
-            return Literal(self.previous().value)
+        if self.match(TokenType.NUMBER):
+            return Number(self.previous().value)
         self.consume(TokenType.LEFT_PAREN, "Expected '(' before expression.")
         expr = self.expression()
         self.consume(TokenType.RIGHT_PAREN, "Expected ')' after expression.")
@@ -163,12 +197,18 @@ class ASTPrinter:
         self.indent_level -= 1
         return result 
 
-    def print_Literal(self, node):
-        return self.indented(f"Literal: {node.value}")
+    def print_Number(self, node):
+        return self.indented(f"Number: {node.value.value}")
 
     def print_UnaryOps(self, node):
         result = self.indented(f"UnaryOps: {node.op.type.name}") + "\n"
-        result += self.print(node.exp)
+        result += self.print(node.right)
+        return result
+
+    def print_BinaryOps(self, node):
+        result = self.indented(f"BinaryOps: {node.op.type.name}") + "\n"
+        result += self.print(node.left) + "\n"
+        result += self.print(node.right)
         return result
 
 class ASMGenerator:
@@ -190,39 +230,62 @@ class ASMGenerator:
     def generate_Function(self, node):
         self.assembly.append(f"global {node.name}")
         self.assembly.append(f"{node.name}:")
-        self.assembly.append("    push ebp")
-        self.assembly.append("    mov ebp, esp")
+        self.assembly.append("    push rbp")
+        self.assembly.append("    mov rbp, rsp")
         
         for statement in node.body:
             self.generate(statement)
 
     def generate_ReturnStatement(self, node):
         self.generate(node.expression)
-        self.assembly.append("    pop eax")
-        self.assembly.append("    mov esp, ebp")
-        self.assembly.append("    pop ebp")
+        self.assembly.append("    pop rax")
+        self.assembly.append("    mov rsp, rbp")
+        self.assembly.append("    pop rbp")
         self.assembly.append("    ret")
 
-    def generate_Literal(self, node):
-        self.assembly.append(f"    push {node.value}")
+    def generate_Number(self, node):
+        self.assembly.append(f"    push {node.value.value}")
 
     def generate_UnaryOps(self, node):
-        self.generate(node.exp)
+        self.generate(node.right)
         op_type = node.op.type 
 
-        if op_type == TokenType.NEGATION:
-            self.assembly.append("    pop eax")
-            self.assembly.append("    neg eax")
-            self.assembly.append("    push eax")
+        if op_type == TokenType.MINUS:
+            self.assembly.append("    pop rax")
+            self.assembly.append("    neg rax")
+            self.assembly.append("    push rax")
         elif op_type == TokenType.LOGICAL_NEGATION:
-            self.assembly.append("    pop eax")
-            self.assembly.append("    cmp eax, 0")
+            self.assembly.append("    pop rax")
+            self.assembly.append("    cmp rax, 0")
             self.assembly.append("    sete al")
-            self.assembly.append("    movzx eax, al")
-            self.assembly.append("    push eax")
+            self.assembly.append("    movzx rax, al")
+            self.assembly.append("    push rax")
         elif op_type == TokenType.BITWISE_COMPLEMENT:
-            self.assembly.append("    pop eax")
-            self.assembly.append("    not eax")
-            self.assembly.append("    push eax")
+            self.assembly.append("    pop rax")
+            self.assembly.append("    not rax")
+            self.assembly.append("    push rax")
         else:
             raise NotImplementedError(f"Unary operation {op_type} not implemented.")
+
+    def generate_BinaryOps(self, node):
+        self.generate(node.right)
+        self.generate(node.left)
+        
+        self.assembly.append("    pop rbx") # left operand 
+        self.assembly.append("    pop rax") # right operand 
+
+        op_type = node.op.type
+
+        if op_type == TokenType.PLUS:
+            self.assembly.append("    add rax, rbx") 
+        elif op_type == TokenType.MINUS:
+            self.assembly.append("    sub rax, rbx")
+        elif op_type == TokenType.STAR:
+            self.assembly.append("    imul rbx")
+        elif op_type == TokenType.SLASH:
+            self.assembly.append("    cqo") # sign-extend eax into edx 
+            self.assembly.append("    idiv rbx")
+        else:
+            raise NotImplementedError(f"Binary operation {op_type} not implemented.")
+
+        self.assembly.append("    push rax") # push result

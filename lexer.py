@@ -3,6 +3,7 @@
 from enum import Enum, auto 
 import re
 
+
 class Token:
     def __init__(self, type, value):
         self.type = type
@@ -19,12 +20,15 @@ class TokenType(Enum):
     INT = auto()
     RETURN = auto()
     IDENTIFIER = auto()
-    LITERAL = auto()
+    NUMBER = auto()
     WHITESPACE = auto()
     EOF = auto()
-    NEGATION = auto()
+    MINUS = auto()
     BITWISE_COMPLEMENT = auto()
     LOGICAL_NEGATION = auto()
+    PLUS = auto()
+    STAR = auto()
+    SLASH = auto()
 
 def tokenize(text):
     tokens = []
@@ -36,12 +40,15 @@ def tokenize(text):
         r";", # SEMICOLON
         r"\bint\b", # INT
         r"\b[a-zA-Z]\w*\b", # IDENTIFIER 
-        r"\b[0-9]+\b", # LITERAL 
+        r"\b[0-9]+\b", # NUMBER
         r"\s+", # WHITESPACE
-        r"-", # NEGATION 
+        r"-", # MINUS 
         r"~", # BITWISE_COMPLEMENT 
-        r"!", # LOGICAL_NEGATION 
-        ])
+        r"!", # LOGICAL_NEGATION
+        r"\+", # PLUS 
+        r"\*", # STAR 
+        r"/", # SLASH
+    ])
     
     for match in re.finditer(pattern, text):
         value = match.group()
@@ -52,10 +59,13 @@ def tokenize(text):
         elif value == ";":          token_type = TokenType.SEMICOLON 
         elif value == "int":        token_type = TokenType.INT 
         elif value == "return":     token_type = TokenType.RETURN 
-        elif value == "-":          token_type = TokenType.NEGATION 
+        elif value == "-":          token_type = TokenType.MINUS
         elif value == "~":          token_type = TokenType.BITWISE_COMPLEMENT 
-        elif value == "!":          token_type = TokenType.LOGICAL_NEGATION
-        elif value.isdigit():       token_type = TokenType.LITERAL 
+        elif value == "!":          token_type = TokenType.LOGICAL_NEGATION 
+        elif value == "+":          token_type = TokenType.PLUS 
+        elif value == "*":          token_type = TokenType.STAR 
+        elif value == "/":          token_type = TokenType.SLASH
+        elif value.isdigit():       token_type = TokenType.NUMBER
         elif value.isidentifier():  token_type = TokenType.IDENTIFIER 
         elif value.isspace():       token_type = TokenType.WHITESPACE 
         else:                       raise ValueError(f"Unexpected Token: {value}")

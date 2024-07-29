@@ -1,0 +1,20 @@
+from enum import Enum, auto
+
+class TokenType(Enum):
+    LEFT_BRACE = auto()
+    RIGHT_BRACE = auto()
+    LEFT_PAREN = auto()
+    RIGHT_PAREN = auto()
+    SEMICOLON = auto()
+    INT = auto()
+    RETURN = auto()
+    IDENTIFIER = auto()
+    NUMBER = auto()
+    WHITESPACE = auto()
+    EOF = auto()
+    MINUS = auto()
+    BITWISE_COMPLEMENT = auto()
+    LOGICAL_NEGATION = auto()
+    PLUS = auto()
+    STAR = auto()
+    SLASH = auto()
