@@ -1,11 +1,3 @@
-# Takes each token from the token list and constructs a AST 
-# 
-# <program> ::= <function>
-# <function> ::= "int" <id> "(" ")" "{" <statement> "}"
-# <statement> ::= "return" <exp> ";"
-# <exp> ::= <int>
-
-from os import wait
 from tokentype import TokenType
 
 class ASTNode:
@@ -41,6 +33,20 @@ class BinaryOps(ASTNode):
         self.left = left 
         self.right = right
 
+class Declaration(ASTNode):
+    def __init__(self, name, exp=None):
+        self.name = name 
+        self.exp = exp
+
+class Assign(ASTNode):
+    def __init__(self, name, exp):
+        self.name = name 
+        self.exp = exp
+
+class Variable(ASTNode):
+    def __init__(self, name):
+        self.name = name
+
 class Parser:
     def __init__(self, tokens):
         self.tokens = tokens 
@@ -75,13 +81,9 @@ class Parser:
     def parse(self): return self.program()
     
     def program(self):
-        """ <program> ::= <function> """
-        
         return Program(self.function())
 
     def function(self):
-        """ <function> ::= "int" <id> "(" ")" "{" <statement> "}" """
-
         self.consume(TokenType.INT, "Expected 'int' as return type.")
         name = self.consume(TokenType.IDENTIFIER, "Expected function name.").value
         self.consume(TokenType.LEFT_PAREN, "Expected '(' after function name.")
@@ -102,22 +104,47 @@ class Parser:
         self.consume(TokenType.RIGHT_BRACE, "Expected '}' after block.")
         return statements 
     
-    def statement(self):
-        """ <statement> ::= "return" <exp> ";" """
+    def declaration(self):
+        name = self.consume(TokenType.IDENTIFIER, "Expected variable name.").value
+        exp = None 
+        if self.match(TokenType.ASSIGN):
+            exp = self.expression()
+        self.consume(TokenType.SEMICOLON, "Expected ';' after variable declaration.")
+        return Declaration(name, exp)
 
+    def statement(self):
         if self.match(TokenType.RETURN):
             return self.return_statement()
-        raise Exception("Expected statement")
+        elif self.match(TokenType.INT):
+            return self.declaration()
+        else:
+            return self.expression_statement()
+        #raise Exception("Expected statement")
+
+    def expression_statement(self):
+        exp = self.expression()
+        self.consume(TokenType.SEMICOLON, "Expected ';' after expression.")
+        return exp
 
     def return_statement(self):
         exp = self.expression()
-        self.consume(TokenType.SEMICOLON, "Expected ';' after return statement.")
+        if not self.check(TokenType.RIGHT_BRACE) and not self.is_at_end():
+            self.consume(TokenType.SEMICOLON, "Expected ';' after return statement.")
         return ReturnStatement(exp)
     
     def expression(self):
-        """ <exp> ::= <logical-and-exp> { "||" <logical-and-exp> } """
+        return self.assignment()
 
-        return self.bitwise_or_expression()
+    def assignment(self):
+        exp = self.bitwise_or_expression()
+        if self.match(TokenType.ASSIGN):
+            name = exp.name if isinstance(exp, Variable) else None 
+            if name is None:
+                raise Exception("Invalid assignment target.")
+            value = self.assignment()
+            return Assign(name, value)
+
+        return exp
 
     def bitwise_or_expression(self):
         exp = self.bitwise_xor_expression()
@@ -152,8 +179,6 @@ class Parser:
         return exp
 
     def logical_and_expression(self):
-        """ <logical-and-exp> ::= <equality_exp> { "&&" <equality_exp> } """
-
         eq_exp = self.equality_expression()
         while self.match(TokenType.AND):
             op = self.previous()
@@ -162,8 +187,6 @@ class Parser:
         return eq_exp
 
     def equality_expression(self):
-        """ <equality_exp> ::= <relational_exp> { ("!=" | "==") <relational_exp> } """
-
         rel_exp = self.relational_expression()
         while self.match(TokenType.NOT_EQUAL, TokenType.EQUAL):
             op = self.previous()
@@ -172,8 +195,6 @@ class Parser:
         return rel_exp
 
     def relational_expression(self):
-        """ <relational_exp> ::= <additve_exp> { ("<" | ">" | "<=" | ">=") <additve_exp> } """
-
         add_exp = self.shift_expression()
         while self.match(TokenType.LESS_THAN, 
                          TokenType.GREATER_THAN,
@@ -193,8 +214,6 @@ class Parser:
         return exp
     
     def additve_expression(self):
-        """ <additve_exp> ::= <term> { ("+" | "-") <term> } """
-
         term = self.term()
         while self.match(TokenType.PLUS, TokenType.MINUS):
             op = self.previous()
@@ -203,8 +222,6 @@ class Parser:
         return term
 
     def term(self):
-        """ <term> ::= <factor> { ("*" | "/") <factor> } """
-
         factor = self.factor()
         while self.match(TokenType.STAR, TokenType.SLASH):
             op = self.previous()
@@ -213,8 +230,6 @@ class Parser:
         return factor
     
     def factor(self):
-        """ <factor> ::= "(" <exp> ")" | <unary_op> <factor> | <int> """
-
         if self.match(TokenType.LEFT_PAREN):
             exp = self.expression()
             self.consume(TokenType.RIGHT_PAREN, "Expected ')' after expression.")
@@ -225,12 +240,12 @@ class Parser:
             return UnaryOps(op, factor)
         elif self.match(TokenType.NUMBER):
             return Number(self.previous())
+        elif self.match(TokenType.IDENTIFIER):
+            return Variable(self.previous())
         else:
             return print("Failed!")
 
     def unary(self):
-        """ <unary_op> ::= "!" | "~" | "-" """
-
         if self.match(TokenType.MINUS, TokenType.LOGICAL_NEGATION, TokenType.BITWISE_COMPLEMENT):
             op = self.previous()
             right = self.unary()
@@ -240,10 +255,13 @@ class Parser:
     def primary(self):
         if self.match(TokenType.NUMBER):
             return Number(self.previous().value)
-        self.consume(TokenType.LEFT_PAREN, "Expected '(' before expression.")
-        expr = self.expression()
-        self.consume(TokenType.RIGHT_PAREN, "Expected ')' after expression.")
-        return expr
+        if self.match(TokenType.IDENTIFIER):
+            return Variable(self.previous().value)
+        if self.match(TokenType.LEFT_PAREN):
+            expr = self.expression()
+            self.consume(TokenType.RIGHT_PAREN, "Expected ')' after expression.")
+            return expr
+        raise Exception("Expected expression.")
 
 class ASTPrinter:
     def __init__(self):
@@ -304,6 +322,28 @@ class ASTPrinter:
         result += self.print(node.right)
         return result
 
+    def print_Declaration(self, node):
+        result = self.indented(f"Declaration: {node.name}\n")
+        if node.exp:
+            self.indent_level += 1
+            result += self.indented("Initializer: \n")
+            self.indent_level += 1
+            result += self.print(node.exp)
+            self.indent_level -= 2
+        return result
+
+    def print_Variable(self, node):
+        return self.indented(f"Variable: {node.name.value}")
+
+    def print_Assign(self, node):
+        result = self.indented(f"Assign: {node.name}\n")
+        self.indent_level += 1
+        result += self.indent_level("Value:\n")
+        self.indent_level += 1
+        result += self.print(node.value)
+        self.indent_level -= 2
+        return result
+
 class ASMGenerator:
     def __init__(self):
         self.assembly = []
@@ -326,6 +366,9 @@ class ASMGenerator:
         self.assembly.append("    push rbp")
         self.assembly.append("    mov rbp, rsp")
         
+        self.variables = {}
+        self.stack_index = 0
+
         for statement in node.body:
             self.generate(statement)
 
@@ -421,3 +464,29 @@ class ASMGenerator:
             raise NotImplementedError(f"Binary operation {op_type} not implemented.")
 
         self.assembly.append("    push rax") # push result
+
+    def generate_Declaration(self, node):
+        self.stack_index += 8
+        self.variables[node.name] = self.stack_index
+
+        if node.exp:
+            self.generate(node.exp)
+            self.assembly.append("    pop rax")
+            self.assembly.append(f"    mov [rbp - {self.stack_index}], rax")
+        else:
+            self.assembly.append(f"    mov qword [rbp - {self.stack_index}], 0")
+
+    def generate_Assign(self, node):
+        if node.name not in self.variables:
+            raise Exception(f"Undefined variable: {node.name}")
+
+        self.generate(node.value)
+        self.assembly.append("    pop rax")
+        self.assembly.append(f"    mov [rbp - {self.variables[node.name]}], rax")
+
+    def generate_Variable(self, node):
+        if node.name.value not in self.variables:
+            raise Exception(f"Undefined variable: {node.name}")
+
+        self.assembly.append(f"    mov rax, [rbp - {self.variables[node.name.value]}]")
+        self.assembly.append("    push rax")

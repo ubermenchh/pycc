@@ -32,3 +32,4 @@ class TokenType(Enum):
     BITWISE_XOR = auto()
     BITWISE_SHIFT_LEFT = auto()
     BITWISE_SHIFT_RIGHT = auto()
+    ASSIGN = auto()

@@ -45,6 +45,7 @@ def tokenize(text):
         r"^", # BITWISE_XOR 
         r"<<", # BITWISE_SHIFT_LEFT
         r">>", # BITWISE_SHIFT_RIGHT
+        r"=", # ASSIGN
     ])
     
     for match in re.finditer(pattern, text):
@@ -76,8 +77,9 @@ def tokenize(text):
         elif value == "^":          token_type = TokenType.BITWISE_XOR 
         elif value == "<<":         token_type = TokenType.BITWISE_SHIFT_LEFT 
         elif value == ">>":         token_type = TokenType.BITWISE_SHIFT_RIGHT
+        elif value == "=":          token_type = TokenType.ASSIGN
         elif value.isdigit():       token_type = TokenType.NUMBER
-        elif value.isidentifier():  token_type = TokenType.IDENTIFIER 
+        elif value.isalpha():  token_type = TokenType.IDENTIFIER 
         elif value.isspace():       token_type = TokenType.WHITESPACE 
         else:                       raise ValueError(f"Unexpected Token: {value}")
 
