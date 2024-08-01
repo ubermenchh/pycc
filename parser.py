@@ -1,4 +1,5 @@
 from tokentype import TokenType
+import subprocess
 
 class ASTNode:
     pass
@@ -347,6 +348,9 @@ class ASTPrinter:
 class ASMGenerator:
     def __init__(self):
         self.assembly = []
+        self.variables = {}
+        self.stack_index = 0
+        self.label_count = 0
 
     def generate(self, node):
         method_name = f"generate_{type(node).__name__}"
@@ -357,78 +361,88 @@ class ASMGenerator:
         raise NotImplementedError(f"Generation not implemented for {type(node).__name__}")
 
     def generate_Program(self, node):
+        self.assembly.append("section .text")
+        self.assembly.append("global main")
         self.generate(node.function)
         return "\n".join(self.assembly)
 
     def generate_Function(self, node):
-        self.assembly.append(f"global {node.name}")
         self.assembly.append(f"{node.name}:")
         self.assembly.append("    push rbp")
         self.assembly.append("    mov rbp, rsp")
-        
-        self.variables = {}
-        self.stack_index = 0
+
+        for statement in node.body:
+            if isinstance(statement, Declaration):
+                self.stack_index += 8 
+                self.variables[statement.name] = self.stack_index 
+
+        if self.stack_index > 0:
+            self.assembly.append(f"    sub rsp, {self.stack_index}")
+
+        self.assembly.append("    and rsp, -16")
 
         for statement in node.body:
             self.generate(statement)
 
-    def generate_ReturnStatement(self, node):
-        self.generate(node.expression)
-        self.assembly.append("    pop rax")
         self.assembly.append("    mov rsp, rbp")
         self.assembly.append("    pop rbp")
         self.assembly.append("    ret")
 
+    def generate_ReturnStatement(self, node):
+        self.generate(node.expression)
+        self.assembly.append("    pop rax")
+
     def generate_Number(self, node):
-        self.assembly.append(f"    push {node.value.value}")
+        self.assembly.append(f"    mov rax, {node.value.value}")
+        self.assembly.append("    push rax")
 
     def generate_UnaryOps(self, node):
         self.generate(node.right)
-        op_type = node.op.type 
+        self.assembly.append("    pop rax")
 
+        op_type = node.op.type 
         if op_type == TokenType.MINUS:
-            self.assembly.append("    pop rax")
             self.assembly.append("    neg rax")
-            self.assembly.append("    push rax")
         elif op_type == TokenType.LOGICAL_NEGATION:
-            self.assembly.append("    pop rax")
             self.assembly.append("    cmp rax, 0")
             self.assembly.append("    sete al")
             self.assembly.append("    movzx rax, al")
-            self.assembly.append("    push rax")
         elif op_type == TokenType.BITWISE_COMPLEMENT:
-            self.assembly.append("    pop rax")
             self.assembly.append("    not rax")
-            self.assembly.append("    push rax")
         else:
             raise NotImplementedError(f"Unary operation {op_type} not implemented.")
+
+        self.assembly.append("    push rax")
 
     def generate_BinaryOps(self, node):
         self.generate(node.right)
         self.generate(node.left)
-        
+
         self.assembly.append("    pop rbx") # left operand 
         self.assembly.append("    pop rax") # right operand 
 
-        op_type = node.op.type
-
+        op_type = node.op.type 
         if op_type == TokenType.PLUS:
-            self.assembly.append("    add rax, rbx") 
+            self.assembly.append("    add rax, rbx")
         elif op_type == TokenType.MINUS:
             self.assembly.append("    sub rax, rbx")
         elif op_type == TokenType.STAR:
-            self.assembly.append("    imul rbx")
+            self.assembly.append("    imul rax, rbx")
         elif op_type == TokenType.SLASH:
-            self.assembly.append("    cqo") # sign-extend eax into edx 
+            self.assembly.append("    cmp rbx, 0")
+            self.assembly.append("    je .division_by_zero")
+            self.assembly.append("    cqo") # sign-extend rax into rdx
             self.assembly.append("    idiv rbx")
         elif op_type == TokenType.PERCENT:
+            self.assembly.append("    cmp rbx, 0")
+            self.assembly.append("    je .division_by_zero")
             self.assembly.append("    cqo")
             self.assembly.append("    idiv rbx")
-            self.assembly.append("    mov rax, rdx") # remainder goes in rdx 
-        elif op_type == TokenType.BITWISE_AND:
-            self.assembly.append("    and rax, rbx")
+            self.assembly.append("    mov rax, rdx") # remainder in rdx 
         elif op_type == TokenType.BITWISE_OR:
             self.assembly.append("    or rax, rbx")
+        elif op_type == TokenType.BITWISE_AND:
+            self.assembly.append("    and rax, rbx")
         elif op_type == TokenType.BITWISE_XOR:
             self.assembly.append("    xor rax, rbx")
         elif op_type == TokenType.BITWISE_SHIFT_LEFT:
@@ -437,15 +451,12 @@ class ASMGenerator:
         elif op_type == TokenType.BITWISE_SHIFT_RIGHT:
             self.assembly.append("    mov rcx, rbx")
             self.assembly.append("    shr rax, cl")
-        elif op_type == TokenType.OR:
-            self.assembly.append("    or rax, rbx")
-        elif op_type == TokenType.AND:
-            self.assembly.append("    and rax, rbx")
-        elif op_type in [
-                TokenType.EQUAL, TokenType.NOT_EQUAL, 
-                TokenType.LESS_THAN, TokenType.LESS_THAN_OR_EQUAL, 
-                TokenType.GREATER_THAN, TokenType.GREATER_THAN_OR_EQUAL
-            ]:
+        elif op_type in [TokenType.EQUAL,
+                         TokenType.NOT_EQUAL,
+                         TokenType.LESS_THAN,
+                         TokenType.LESS_THAN_OR_EQUAL,
+                         TokenType.GREATER_THAN,
+                         TokenType.GREATER_THAN_OR_EQUAL]:
             self.assembly.append("    cmp rax, rbx")
             if op_type == TokenType.EQUAL:
                 self.assembly.append("    sete al")
@@ -463,18 +474,21 @@ class ASMGenerator:
         else:
             raise NotImplementedError(f"Binary operation {op_type} not implemented.")
 
-        self.assembly.append("    push rax") # push result
+        self.assembly.append("    push rax")
+
+        if op_type in [TokenType.SLASH, TokenType.PERCENT]:
+            self.assembly.append(".division_by_zero")
+            self.assembly.append("    mov rdi, 1") # exit code 1 
+            self.assembly.append("    mov rax, 60") # sys_exit 
+            self.assembly.append("    syscall")
 
     def generate_Declaration(self, node):
-        self.stack_index += 8
-        self.variables[node.name] = self.stack_index
-
         if node.exp:
             self.generate(node.exp)
             self.assembly.append("    pop rax")
-            self.assembly.append(f"    mov [rbp - {self.stack_index}], rax")
+            self.assembly.append(f"    mov [rbp - {self.variables[node.name]}], rax")
         else:
-            self.assembly.append(f"    mov qword [rbp - {self.stack_index}], 0")
+            self.assembly.append(f"    mov qword [rbp - {self.variables[node.name]}], 0")
 
     def generate_Assign(self, node):
         if node.name not in self.variables:
@@ -490,3 +504,21 @@ class ASMGenerator:
 
         self.assembly.append(f"    mov rax, [rbp - {self.variables[node.name.value]}]")
         self.assembly.append("    push rax")
+
+    def emit(self, output_file="output.s", output_exe="out"):
+        with open(output_file, "w") as f:
+            f.write("\n".join(self.assembly) + "\n")
+
+        print(f"Assembly written to {output_file}.")
+
+        try:
+            subprocess.run(["nasm", "-f", "elf64", output_file], check=True)
+
+            object_file = output_file.rsplit(".", 1)[0] + ".o"
+            subprocess.run(["ld", object_file, "-o", output_exe, "-e", "main"], check=True)
+            
+            print(f"Executable created: {output_exe}.")
+        except subprocess.CalledProcessError as e:
+            print(f"Error during completion or linking: {e}")
+        except FileNotFoundError:
+            print("Error: nasm or ld not found. Make sure they are installed and in your PATH.")
