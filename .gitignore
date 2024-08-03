@@ -10,6 +10,8 @@ __pycache__/
 *.asm
 *.exe
 
+bin/
+
 # Distribution / packaging
 .Python
 build/

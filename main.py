@@ -1,5 +1,5 @@
-from lexer import tokenize
-from parser import *
+from src.lexer import *
+from src.parser import *
 
 with open("main.c", "r") as f:
     text = f.read()

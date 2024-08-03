@@ -1,5 +1,5 @@
-from tokentype import TokenType
-import subprocess
+from .tokentype import TokenType
+import subprocess, os
 
 class ASTNode:
     pass
@@ -523,6 +523,12 @@ class ASMGenerator:
         ])
 
     def emit(self, output_file="output.s", output_exe="out.exe"):
+        output_dir = "./bin"
+        os.makedirs(output_dir, exist_ok=True)
+
+        output_file = os.path.join(output_dir, output_file)
+        output_exe = os.path.join(output_dir, output_exe)
+
         with open(output_file, "w") as f:
             f.write("default rel\n")  # Important for position-independent code
             f.write("\n".join(self.assembly) + "\n")

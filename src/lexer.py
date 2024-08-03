@@ -1,7 +1,7 @@
 # Scans a C File and return a list of tokens
 
 import re
-from tokentype import TokenType
+from .tokentype import TokenType
 
 class Token:
     def __init__(self, type, value):
