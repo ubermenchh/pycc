@@ -12,7 +12,7 @@ main.s: main.c
 	$(CC) $(CFLAGS) -S main.c 
 
 clean:
-	rm -rf $(TARGET) *.o *.s 
+	rm -rf $(TARGET) *.o *.s *.asm *.exe 
 
 .PHONY: clean asm 
 

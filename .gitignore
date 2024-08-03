@@ -7,6 +7,8 @@ __pycache__/
 *.so
 *.s 
 *.o
+*.asm
+*.exe
 
 # Distribution / packaging
 .Python

@@ -522,7 +522,7 @@ class ASMGenerator:
             "    push rax"
         ])
 
-    def emit(self, output_file="output.s", output_exe="out"):
+    def emit(self, output_file="output.s", output_exe="out.exe"):
         with open(output_file, "w") as f:
             f.write("default rel\n")  # Important for position-independent code
             f.write("\n".join(self.assembly) + "\n")
