@@ -19,6 +19,6 @@ generator = ASMGenerator()
 print(printer.print(ast))
 asm_code = generator.generate(ast)
 
-print("".join(asm_code))
+print(asm_code)
 
 generator.emit()

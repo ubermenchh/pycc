@@ -361,132 +361,145 @@ class ASMGenerator:
         raise NotImplementedError(f"Generation not implemented for {type(node).__name__}")
 
     def generate_Program(self, node):
-        self.assembly.append("section .text")
-        self.assembly.append("global main")
+        self.assembly.extend([
+            "section .text",
+            "global main",
+            "extern printf"
+        ])
         self.generate(node.function)
         return "\n".join(self.assembly)
 
     def generate_Function(self, node):
-        self.assembly.append(f"{node.name}:")
-        self.assembly.append("    push rbp")
-        self.assembly.append("    mov rbp, rsp")
+        self.assembly.extend([
+            f"{node.name}:",
+            "    push rbp",
+            "    mov rbp, rsp"
+        ])
 
+        # Reserve space for local variables
         for statement in node.body:
             if isinstance(statement, Declaration):
-                self.stack_index += 8 
-                self.variables[statement.name] = self.stack_index 
+                self.stack_index += 8
+                self.variables[statement.name] = self.stack_index
+
+        # Align stack
+        if self.stack_index % 16 != 0:
+            self.stack_index += 16 - (self.stack_index % 16)
 
         if self.stack_index > 0:
             self.assembly.append(f"    sub rsp, {self.stack_index}")
 
-        self.assembly.append("    and rsp, -16")
-
+        # Generate assembly for function body
         for statement in node.body:
             self.generate(statement)
 
-        self.assembly.append("    mov rsp, rbp")
-        self.assembly.append("    pop rbp")
-        self.assembly.append("    ret")
+        # Function epilogue
+        self.assembly.extend([
+            "    mov rsp, rbp",
+            "    pop rbp",
+            "    ret"
+        ])
 
     def generate_ReturnStatement(self, node):
         self.generate(node.expression)
         self.assembly.append("    pop rax")
 
     def generate_Number(self, node):
-        self.assembly.append(f"    mov rax, {node.value.value}")
-        self.assembly.append("    push rax")
+        self.assembly.append(f"    push {node.value.value}")
 
     def generate_UnaryOps(self, node):
         self.generate(node.right)
         self.assembly.append("    pop rax")
 
-        op_type = node.op.type 
-        if op_type == TokenType.MINUS:
-            self.assembly.append("    neg rax")
-        elif op_type == TokenType.LOGICAL_NEGATION:
-            self.assembly.append("    cmp rax, 0")
-            self.assembly.append("    sete al")
-            self.assembly.append("    movzx rax, al")
-        elif op_type == TokenType.BITWISE_COMPLEMENT:
-            self.assembly.append("    not rax")
+        op_map = {
+            TokenType.MINUS: "    neg rax",
+            TokenType.LOGICAL_NEGATION: [
+                "    cmp rax, 0",
+                "    sete al",
+                "    movzx rax, al"
+            ],
+            TokenType.BITWISE_COMPLEMENT: "    not rax"
+        }
+
+        op_asm = op_map.get(node.op.type)
+        if op_asm:
+            if isinstance(op_asm, list):
+                self.assembly.extend(op_asm)
+            else:
+                self.assembly.append(op_asm)
         else:
-            raise NotImplementedError(f"Unary operation {op_type} not implemented.")
+            raise NotImplementedError(f"Unary operation {node.op.type} not implemented.")
 
         self.assembly.append("    push rax")
 
     def generate_BinaryOps(self, node):
         self.generate(node.right)
         self.generate(node.left)
+        self.assembly.extend([
+            "    pop rbx",  # left operand
+            "    pop rax"   # right operand
+        ])
 
-        self.assembly.append("    pop rbx") # left operand 
-        self.assembly.append("    pop rax") # right operand 
+        op_map = {
+            TokenType.PLUS: "    add rax, rbx",
+            TokenType.MINUS: "    sub rax, rbx",
+            TokenType.STAR: "    imul rbx",
+            TokenType.SLASH: [
+                "    xor rdx, rdx",
+                "    idiv rbx",
+            ],
+            TokenType.PERCENT:  [
+                "    xor rdx, rdx",
+                "    idiv rbx",
+                "    mov rax, rdx"
+            ],
+            TokenType.BITWISE_OR: "    or rax, rbx",
+            TokenType.BITWISE_AND: "    and rax, rbx",
+            TokenType.BITWISE_XOR: "    xor rax, rbx",
+            TokenType.BITWISE_SHIFT_LEFT: [
+                "    mov rcx, rbx",
+                "    shl rax, cl"
+            ],
+            TokenType.BITWISE_SHIFT_RIGHT:  [
+                "    mov rcx, rbx",
+                "    shr rax, cl"
+            ]
+        }
 
-        op_type = node.op.type 
-        if op_type == TokenType.PLUS:
-            self.assembly.append("    add rax, rbx")
-        elif op_type == TokenType.MINUS:
-            self.assembly.append("    sub rax, rbx")
-        elif op_type == TokenType.STAR:
-            self.assembly.append("    imul rax, rbx")
-        elif op_type == TokenType.SLASH:
-            self.assembly.append("    cmp rbx, 0")
-            self.assembly.append("    je .division_by_zero")
-            self.assembly.append("    cqo") # sign-extend rax into rdx
-            self.assembly.append("    idiv rbx")
-        elif op_type == TokenType.PERCENT:
-            self.assembly.append("    cmp rbx, 0")
-            self.assembly.append("    je .division_by_zero")
-            self.assembly.append("    cqo")
-            self.assembly.append("    idiv rbx")
-            self.assembly.append("    mov rax, rdx") # remainder in rdx 
-        elif op_type == TokenType.BITWISE_OR:
-            self.assembly.append("    or rax, rbx")
-        elif op_type == TokenType.BITWISE_AND:
-            self.assembly.append("    and rax, rbx")
-        elif op_type == TokenType.BITWISE_XOR:
-            self.assembly.append("    xor rax, rbx")
-        elif op_type == TokenType.BITWISE_SHIFT_LEFT:
-            self.assembly.append("    mov rcx, rbx")
-            self.assembly.append("    shl rax, cl")
-        elif op_type == TokenType.BITWISE_SHIFT_RIGHT:
-            self.assembly.append("    mov rcx, rbx")
-            self.assembly.append("    shr rax, cl")
-        elif op_type in [TokenType.EQUAL,
-                         TokenType.NOT_EQUAL,
-                         TokenType.LESS_THAN,
-                         TokenType.LESS_THAN_OR_EQUAL,
-                         TokenType.GREATER_THAN,
-                         TokenType.GREATER_THAN_OR_EQUAL]:
-            self.assembly.append("    cmp rax, rbx")
-            if op_type == TokenType.EQUAL:
-                self.assembly.append("    sete al")
-            elif op_type == TokenType.NOT_EQUAL:
-                self.assembly.append("    setne al")
-            elif op_type == TokenType.LESS_THAN:
-                self.assembly.append("    setl al")
-            elif op_type == TokenType.LESS_THAN_OR_EQUAL:
-                self.assembly.append("    setle al")
-            elif op_type == TokenType.GREATER_THAN:
-                self.assembly.append("    setg al")
-            elif op_type == TokenType.GREATER_THAN_OR_EQUAL:
-                self.assembly.append("    setge al")
-            self.assembly.append("    movzx rax, al")
+        compare_ops = {
+            TokenType.EQUAL: "sete",
+            TokenType.NOT_EQUAL: "setne",
+            TokenType.LESS_THAN: "setl",
+            TokenType.LESS_THAN_OR_EQUAL: "setle",
+            TokenType.GREATER_THAN: "setg",
+            TokenType.GREATER_THAN_OR_EQUAL: "setge"
+        }
+
+        if node.op.type in compare_ops:
+            self.assembly.extend([
+                "    cmp rax, rbx",
+                f"    {compare_ops[node.op.type]} al",
+                "    movzx rax, al"
+            ])
         else:
-            raise NotImplementedError(f"Binary operation {op_type} not implemented.")
+            op_asm = op_map.get(node.op.type)
+            if op_asm:
+                if isinstance(op_asm, list):
+                    self.assembly.extend(op_asm)
+                else:
+                    self.assembly.append(op_asm)
+            else:
+                raise NotImplementedError(f"Binary operation {node.op.type} not implemented.")
 
         self.assembly.append("    push rax")
-
-        if op_type in [TokenType.SLASH, TokenType.PERCENT]:
-            self.assembly.append(".division_by_zero")
-            self.assembly.append("    mov rdi, 1") # exit code 1 
-            self.assembly.append("    mov rax, 60") # sys_exit 
-            self.assembly.append("    syscall")
 
     def generate_Declaration(self, node):
         if node.exp:
             self.generate(node.exp)
-            self.assembly.append("    pop rax")
-            self.assembly.append(f"    mov [rbp - {self.variables[node.name]}], rax")
+            self.assembly.extend([
+                "    pop rax",
+                f"    mov [rbp - {self.variables[node.name]}], rax"
+            ])
         else:
             self.assembly.append(f"    mov qword [rbp - {self.variables[node.name]}], 0")
 
@@ -495,18 +508,23 @@ class ASMGenerator:
             raise Exception(f"Undefined variable: {node.name}")
 
         self.generate(node.value)
-        self.assembly.append("    pop rax")
-        self.assembly.append(f"    mov [rbp - {self.variables[node.name]}], rax")
+        self.assembly.extend([
+            "    pop rax",
+            f"    mov [rbp - {self.variables[node.name]}], rax"
+        ])
 
     def generate_Variable(self, node):
         if node.name.value not in self.variables:
-            raise Exception(f"Undefined variable: {node.name}")
+            raise Exception(f"Undefined variable: {node.name.value}")
 
-        self.assembly.append(f"    mov rax, [rbp - {self.variables[node.name.value]}]")
-        self.assembly.append("    push rax")
+        self.assembly.extend([
+            f"    mov rax, [rbp - {self.variables[node.name.value]}]",
+            "    push rax"
+        ])
 
     def emit(self, output_file="output.s", output_exe="out"):
         with open(output_file, "w") as f:
+            f.write("default rel\n")  # Important for position-independent code
             f.write("\n".join(self.assembly) + "\n")
 
         print(f"Assembly written to {output_file}.")
@@ -515,10 +533,10 @@ class ASMGenerator:
             subprocess.run(["nasm", "-f", "elf64", output_file], check=True)
 
             object_file = output_file.rsplit(".", 1)[0] + ".o"
-            subprocess.run(["ld", object_file, "-o", output_exe, "-e", "main"], check=True)
+            subprocess.run(["gcc", "-no-pie", object_file, "-o", output_exe], check=True)
             
             print(f"Executable created: {output_exe}.")
         except subprocess.CalledProcessError as e:
-            print(f"Error during completion or linking: {e}")
+            print(f"Error during compilation or linking: {e}")
         except FileNotFoundError:
-            print("Error: nasm or ld not found. Make sure they are installed and in your PATH.")
+            print("Error: nasm or gcc not found. Make sure they are installed and in your PATH.")
