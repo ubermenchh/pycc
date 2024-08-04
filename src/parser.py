@@ -35,7 +35,8 @@ class BinaryOps(ASTNode):
         self.right = right
 
 class Declaration(ASTNode):
-    def __init__(self, name, exp=None):
+    def __init__(self, type, name, exp=None):
+        self.type = type
         self.name = name 
         self.exp = exp
 
@@ -95,6 +96,11 @@ class Parser:
 
     def parameter_list(self):
         params = []
+        if self.match(TokenType.IDENTIFIER):
+            params.append(Variable(self.previous()))
+            while self.match(TokenType.COMMA):
+                self.consume(TokenType.IDENTIFIER, "Expected variable name.")
+                params.append(Variable(self.previous()))
         return params
 
     def block(self):
@@ -106,12 +112,13 @@ class Parser:
         return statements 
     
     def declaration(self):
+        type = self.previous().value
         name = self.consume(TokenType.IDENTIFIER, "Expected variable name.").value
         exp = None 
         if self.match(TokenType.ASSIGN):
             exp = self.expression()
         self.consume(TokenType.SEMICOLON, "Expected ';' after variable declaration.")
-        return Declaration(name, exp)
+        return Declaration(type, name, exp)
 
     def statement(self):
         if self.match(TokenType.RETURN):
@@ -120,7 +127,6 @@ class Parser:
             return self.declaration()
         else:
             return self.expression_statement()
-        #raise Exception("Expected statement")
 
     def expression_statement(self):
         exp = self.expression()
@@ -139,12 +145,16 @@ class Parser:
     def assignment(self):
         exp = self.bitwise_or_expression()
         if self.match(TokenType.ASSIGN):
-            name = exp.name if isinstance(exp, Variable) else None 
-            if name is None:
+            if isinstance(exp, Variable):
+                name = exp.name 
+                value = self.assignment()
+                return Assign(name, value)
+            elif isinstance(exp, BinaryOps) and isinstance(exp.left, Variable):
+                name = exp.left.name 
+                value = Assign(exp.right, self.assignment())
+                return Assign(name, value)
+            else:
                 raise Exception("Invalid assignment target.")
-            value = self.assignment()
-            return Assign(name, value)
-
         return exp
 
     def bitwise_or_expression(self):
@@ -337,11 +347,11 @@ class ASTPrinter:
         return self.indented(f"Variable: {node.name.value}")
 
     def print_Assign(self, node):
-        result = self.indented(f"Assign: {node.name}\n")
+        result = self.indented(f"Assign: {node.name.value}\n")
         self.indent_level += 1
-        result += self.indent_level("Value:\n")
+        result += self.indented("Value:\n")
         self.indent_level += 1
-        result += self.print(node.value)
+        result += self.print(node.exp)
         self.indent_level -= 2
         return result
 
@@ -383,15 +393,20 @@ class ASMGenerator:
                 self.variables[statement.name] = self.stack_index
 
         # Align stack
-        if self.stack_index % 16 != 0:
-            self.stack_index += 16 - (self.stack_index % 16)
-
-        if self.stack_index > 0:
+        if self.stack_index > 0 or len(node.body) > 0:
+            if self.stack_index % 16 != 0: 
+                self.stack_index += 16 - (self.stack_index % 16)
             self.assembly.append(f"    sub rsp, {self.stack_index}")
 
         # Generate assembly for function body
+        has_return = False
         for statement in node.body:
+            if isinstance(statement, ReturnStatement):
+                has_return = True
             self.generate(statement)
+
+        if not has_return:
+            self.assembly.append("    xor rax, rax")
 
         # Function epilogue
         self.assembly.extend([
@@ -504,13 +519,13 @@ class ASMGenerator:
             self.assembly.append(f"    mov qword [rbp - {self.variables[node.name]}], 0")
 
     def generate_Assign(self, node):
-        if node.name not in self.variables:
-            raise Exception(f"Undefined variable: {node.name}")
+        if node.name.value not in self.variables:
+            raise Exception(f"Undefined variable: {node.name.value}")
 
-        self.generate(node.value)
+        self.generate(node.exp)
         self.assembly.extend([
             "    pop rax",
-            f"    mov [rbp - {self.variables[node.name]}], rax"
+            f"    mov [rbp - {self.variables[node.name.value]}], rax"
         ])
 
     def generate_Variable(self, node):
