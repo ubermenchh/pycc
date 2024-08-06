@@ -49,6 +49,12 @@ class Variable(ASTNode):
     def __init__(self, name):
         self.name = name
 
+class Conditional(ASTNode):
+    def __init__(self, condition, if_stmt, else_stmt=None):
+        self.condition = condition
+        self.if_stmt = if_stmt 
+        self.else_stmt = else_stmt
+
 class Parser:
     def __init__(self, tokens):
         self.tokens = tokens 
@@ -125,6 +131,8 @@ class Parser:
             return self.return_statement()
         elif self.match(TokenType.INT):
             return self.declaration()
+        elif self.match(TokenType.IF):
+            return self.if_statement()
         else:
             return self.expression_statement()
 
@@ -138,12 +146,31 @@ class Parser:
         if not self.check(TokenType.RIGHT_BRACE) and not self.is_at_end():
             self.consume(TokenType.SEMICOLON, "Expected ';' after return statement.")
         return ReturnStatement(exp)
+
+    def if_statement(self):
+        self.consume(TokenType.LEFT_PAREN, "Expected '(' after if.")
+        cond = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expected ')' after condition.")
+        if self.check(TokenType.LEFT_BRACE):
+            if_stmt = self.block()
+        else:
+            if_stmt = self.statement()
+        else_stmt = None
+        if self.match(TokenType.ELSE):
+            if self.match(TokenType.IF): 
+                else_stmt = self.if_statement()
+            else:
+                if self.check(TokenType.LEFT_BRACE):
+                    else_stmt = self.block()
+                else:
+                    else_stmt = self.statement()
+        return Conditional(cond, if_stmt, else_stmt)
     
     def expression(self):
         return self.assignment()
 
     def assignment(self):
-        exp = self.bitwise_or_expression()
+        exp = self.conditional_expression()
         if self.match(TokenType.ASSIGN):
             if isinstance(exp, Variable):
                 name = exp.name 
@@ -155,6 +182,15 @@ class Parser:
                 return Assign(name, value)
             else:
                 raise Exception("Invalid assignment target.")
+        return exp
+
+    def conditional_expression(self):
+        exp = self.bitwise_or_expression()
+        if self.match(TokenType.QUESTION):
+            if_stmt = self.expression()
+            self.consume(TokenType.COLON, "Expected ':' after '?' in ternary statement.")
+            else_stmt = self.conditional_expression()
+            return Conditional(exp, if_stmt, else_stmt)
         return exp
 
     def bitwise_or_expression(self):
@@ -355,6 +391,31 @@ class ASTPrinter:
         self.indent_level -= 2
         return result
 
+    def print_Conditional(self, node):
+        result = self.indented(f"Conditional: \n")
+        self.indent_level += 1
+        result += self.indented(f"If: \n")
+        self.indent_level += 1
+        result += self.print(node.condition) + "\n"
+        self.indent_level -= 1
+        result += self.indented(f"Then: \n")
+        self.indent_level += 1
+        if isinstance(node.if_stmt, list):
+            for stmt in node.if_stmt:
+                result += self.print(stmt) + "\n"
+        else:
+            result += self.print(node.if_stmt) + "\n"
+        self.indent_level -= 1
+        result += self.indented(f"Else: \n")
+        self.indent_level += 1
+        if isinstance(node.else_stmt, list):
+            for stmt in node.else_stmt:
+                result += self.print(stmt) + "\n"
+        else:
+            result += self.print(node.else_stmt)
+        self.indent_level -= 2
+        return result
+
 class ASMGenerator:
     def __init__(self):
         self.assembly = []
@@ -372,6 +433,7 @@ class ASMGenerator:
 
     def generate_Program(self, node):
         self.assembly.extend([
+            "default rel",
             "section .text",
             "global main",
             "extern printf"
@@ -536,6 +598,30 @@ class ASMGenerator:
             f"    mov rax, [rbp - {self.variables[node.name.value]}]",
             "    push rax"
         ])
+
+    def generate_Conditional(self, node):
+        end_label = self.new_label("end")
+        else_label = self.new_label("else")
+
+        self.generate(node.condition)
+        self.assembly.extend([
+            "    pop rax",
+            "    cmp rax, 0",
+            f"    je {else_label}"
+        ])
+
+        self.generate(node.if_stmt)
+        self.assembly.append(f"    jmp {end_label}")
+
+        self.assembly.append(f"{else_label}")
+        if node.else_stmt:
+            self.generate(node.else_stmt)
+
+        self.assembly.append(f"{end_label}")
+
+    def new_label(self, prefix):
+        self.label_count += 1
+        return f".{prefix}_{self.label_count}"
 
     def emit(self, output_file="output.s", output_exe="out.exe"):
         output_dir = "./bin"

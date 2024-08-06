@@ -46,6 +46,10 @@ def tokenize(text):
         r"<<", # BITWISE_SHIFT_LEFT
         r">>", # BITWISE_SHIFT_RIGHT
         r"=", # ASSIGN
+        r"\bif\b", # IF 
+        r"\belse\b", # ELSE 
+        r":", # COLON 
+        r"\?", # QUESTION
     ])
     
     for match in re.finditer(pattern, text):
@@ -78,6 +82,10 @@ def tokenize(text):
         elif value == "<<":         token_type = TokenType.BITWISE_SHIFT_LEFT 
         elif value == ">>":         token_type = TokenType.BITWISE_SHIFT_RIGHT
         elif value == "=":          token_type = TokenType.ASSIGN
+        elif value == "if":         token_type = TokenType.IF 
+        elif value == "else":       token_type = TokenType.ELSE 
+        elif value == ":":          token_type = TokenType.COLON 
+        elif value == "?":          token_type = TokenType.QUESTION
         elif value.isdigit():       token_type = TokenType.NUMBER
         elif value.isalpha():  token_type = TokenType.IDENTIFIER 
         elif value.isspace():       token_type = TokenType.WHITESPACE 

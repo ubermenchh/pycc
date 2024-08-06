@@ -33,3 +33,7 @@ class TokenType(Enum):
     BITWISE_SHIFT_LEFT = auto()
     BITWISE_SHIFT_RIGHT = auto()
     ASSIGN = auto()
+    IF = auto()
+    ELSE = auto()
+    COLON = auto()
+    QUESTION = auto()
