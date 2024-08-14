@@ -55,6 +55,10 @@ class Conditional(ASTNode):
         self.if_stmt = if_stmt 
         self.else_stmt = else_stmt
 
+class Block(ASTNode):
+    def __init__(self, statements):
+        self.statements = statements
+
 class Parser:
     def __init__(self, tokens):
         self.tokens = tokens 
@@ -113,9 +117,9 @@ class Parser:
         self.consume(TokenType.LEFT_BRACE, "Expected '{' before block.")
         statements = []
         while not self.check(TokenType.RIGHT_BRACE) and not self.is_at_end():
-            statements.append(self.statement())
+            statements.append(self.declaration_or_statement())
         self.consume(TokenType.RIGHT_BRACE, "Expected '}' after block.")
-        return statements 
+        return Block(statements) 
     
     def declaration(self):
         type = self.previous().value
@@ -133,8 +137,15 @@ class Parser:
             return self.declaration()
         elif self.match(TokenType.IF):
             return self.if_statement()
+        elif self.check(TokenType.LEFT_BRACE):
+            return self.block()
         else:
             return self.expression_statement()
+    
+    def declaration_or_statement(self):
+        if self.match(TokenType.INT):
+            return self.declaration()
+        return self.statement()
 
     def expression_statement(self):
         exp = self.expression()
@@ -151,20 +162,25 @@ class Parser:
         self.consume(TokenType.LEFT_PAREN, "Expected '(' after if.")
         cond = self.expression()
         self.consume(TokenType.RIGHT_PAREN, "Expected ')' after condition.")
-        if self.check(TokenType.LEFT_BRACE):
-            if_stmt = self.block()
-        else:
-            if_stmt = self.statement()
-        else_stmt = None
+        #if self.check(TokenType.LEFT_BRACE):
+        #    if_stmt = self.block()
+        #else:
+        #    if_stmt = self.statement()
+        #else_stmt = None
+        #if self.match(TokenType.ELSE):
+        #    if self.match(TokenType.IF): 
+        #        else_stmt = self.if_statement()
+        #    else:
+        #        if self.check(TokenType.LEFT_BRACE):
+        #            else_stmt = self.block()
+        #        else:
+        #            else_stmt = self.statement()
+        #return Conditional(cond, if_stmt, else_stmt)
+        then_branch = self.statement()
+        else_branch = None 
         if self.match(TokenType.ELSE):
-            if self.match(TokenType.IF): 
-                else_stmt = self.if_statement()
-            else:
-                if self.check(TokenType.LEFT_BRACE):
-                    else_stmt = self.block()
-                else:
-                    else_stmt = self.statement()
-        return Conditional(cond, if_stmt, else_stmt)
+            else_branch = self.statement()
+        return Conditional(cond, then_branch, else_branch)
     
     def expression(self):
         return self.assignment()
@@ -343,7 +359,7 @@ class ASTPrinter:
             self.indent_level -= 1
         result += self.indented("Body:\n")
         self.indent_level += 1
-        for statement in node.body:
+        for statement in node.body.statements:
             result += self.print(statement) + "\n"
         self.indent_level -= 1
         return result 
@@ -351,7 +367,7 @@ class ASTPrinter:
     def print_ReturnStatement(self, node):
         result = self.indented("Return:\n")
         self.indent_level += 1
-        result += self.print(node.expression)
+        result += self.print(node.expression) + "\n"
         self.indent_level -= 1
         return result 
 
@@ -375,7 +391,7 @@ class ASTPrinter:
             self.indent_level += 1
             result += self.indented("Initializer: \n")
             self.indent_level += 1
-            result += self.print(node.exp)
+            result += self.print(node.exp) + "\n"
             self.indent_level -= 2
         return result
 
@@ -416,12 +432,38 @@ class ASTPrinter:
         self.indent_level -= 2
         return result
 
+    def print_Block(self, node):
+        result = self.indented("Block: \n")
+        self.indent_level += 1
+        if isinstance(node.statements, list):
+            for stmt in node.statements:
+                result += self.print(stmt)
+        else:
+            result += self.print(node.statements)
+        self.indent_level -= 1
+        return result
+
 class ASMGenerator:
     def __init__(self):
         self.assembly = []
-        self.variables = {}
+        self.scopes = []
         self.stack_index = 0
         self.label_count = 0
+    
+    def enter_scope(self): 
+        self.scopes.append({})
+
+    def exit_scope(self):
+        scope = self.scopes.pop()
+        if scope:
+            self.stack_index -= 8 * len(scope) 
+            self.assembly.append(f"    add rsp, {8 * len(scope)}")
+
+    def find_variable(self, name):
+        for scope in reversed(self.scopes):
+            if name in scope:
+                return scope[name]
+        raise Exception(f"Undefined Variable : {name}")
 
     def generate(self, node):
         method_name = f"generate_{type(node).__name__}"
@@ -442,47 +484,44 @@ class ASMGenerator:
         return "\n".join(self.assembly)
 
     def generate_Function(self, node):
+        self.current_function = self.new_label("function_end") # function end label
         self.assembly.extend([
             f"{node.name}:",
             "    push rbp",
             "    mov rbp, rsp"
         ])
-
-        # Reserve space for local variables
-        for statement in node.body:
-            if isinstance(statement, Declaration):
-                self.stack_index += 8
-                self.variables[statement.name] = self.stack_index
-
-        # Align stack
-        if self.stack_index > 0 or len(node.body) > 0:
-            if self.stack_index % 16 != 0: 
-                self.stack_index += 16 - (self.stack_index % 16)
-            self.assembly.append(f"    sub rsp, {self.stack_index}")
-
-        # Generate assembly for function body
-        has_return = False
-        for statement in node.body:
-            if isinstance(statement, ReturnStatement):
-                has_return = True
-            self.generate(statement)
-
-        if not has_return:
-            self.assembly.append("    xor rax, rax")
+        
+        self.enter_scope()
+        self.generate_statements(node.body)
+        self.exit_scope()
 
         # Function epilogue
         self.assembly.extend([
+            f"{self.current_function}:"
             "    mov rsp, rbp",
             "    pop rbp",
             "    ret"
         ])
 
+    def generate_Block(self, node):
+        self.enter_scope()
+        self.generate_statements(node.statements)
+        self.exit_scope()
+
+    def generate_statements(self, statements):
+        if isinstance(statements, list):
+            for stmt in statements:
+                self.generate(stmt)
+        else:
+            self.generate(statements)
+
     def generate_ReturnStatement(self, node):
-        self.generate(node.expression)
-        self.assembly.append("    pop rax")
+        if node.expression:
+            self.generate(node.expression)
+        self.assembly.append(f"    jmp {self.current_function}")
 
     def generate_Number(self, node):
-        self.assembly.append(f"    push {node.value.value}")
+        self.assembly.append(f"    mov rax, {node.value.value}")
 
     def generate_UnaryOps(self, node):
         self.generate(node.right)
@@ -510,12 +549,10 @@ class ASMGenerator:
         self.assembly.append("    push rax")
 
     def generate_BinaryOps(self, node):
-        self.generate(node.right)
         self.generate(node.left)
-        self.assembly.extend([
-            "    pop rbx",  # left operand
-            "    pop rax"   # right operand
-        ])
+        self.assembly.append("    push rax")
+        self.generate(node.right)
+        self.assembly.append("    pop rbx")
 
         op_map = {
             TokenType.PLUS: "    add rax, rbx",
@@ -554,7 +591,7 @@ class ASMGenerator:
 
         if node.op.type in compare_ops:
             self.assembly.extend([
-                "    cmp rax, rbx",
+                "    cmp rbx, rax",
                 f"    {compare_ops[node.op.type]} al",
                 "    movzx rax, al"
             ])
@@ -571,33 +608,24 @@ class ASMGenerator:
         self.assembly.append("    push rax")
 
     def generate_Declaration(self, node):
+        self.stack_index += 8 
+        self.scopes[-1][node.name] = self.stack_index 
+        self.assembly.append(f"    sub rsp, 8")
+
         if node.exp:
             self.generate(node.exp)
-            self.assembly.extend([
-                "    pop rax",
-                f"    mov [rbp - {self.variables[node.name]}], rax"
-            ])
+            self.assembly.append(f"    mov [rbp - {self.stack_index}], rax")
         else:
-            self.assembly.append(f"    mov qword [rbp - {self.variables[node.name]}], 0")
+            self.assembly.append(f"    mov qword [rbp - {self.stack_index}], 0")
 
     def generate_Assign(self, node):
-        if node.name.value not in self.variables:
-            raise Exception(f"Undefined variable: {node.name.value}")
-
+        offset = self.find_variable(node.name.value)
         self.generate(node.exp)
-        self.assembly.extend([
-            "    pop rax",
-            f"    mov [rbp - {self.variables[node.name.value]}], rax"
-        ])
+        self.assembly.append(f"    mov [rbp - {offset}], rax")
 
     def generate_Variable(self, node):
-        if node.name.value not in self.variables:
-            raise Exception(f"Undefined variable: {node.name.value}")
-
-        self.assembly.extend([
-            f"    mov rax, [rbp - {self.variables[node.name.value]}]",
-            "    push rax"
-        ])
+        offset = self.find_variable(node.name.value)
+        self.assembly.append(f"    mov rax, [rbp - {offset}]")
 
     def generate_Conditional(self, node):
         end_label = self.new_label("end")
@@ -605,7 +633,6 @@ class ASMGenerator:
 
         self.generate(node.condition)
         self.assembly.extend([
-            "    pop rax",
             "    cmp rax, 0",
             f"    je {else_label}"
         ])
@@ -613,11 +640,11 @@ class ASMGenerator:
         self.generate(node.if_stmt)
         self.assembly.append(f"    jmp {end_label}")
 
-        self.assembly.append(f"{else_label}")
+        self.assembly.append(f"{else_label}:")
         if node.else_stmt:
             self.generate(node.else_stmt)
 
-        self.assembly.append(f"{end_label}")
+        self.assembly.append(f"{end_label}:")
 
     def new_label(self, prefix):
         self.label_count += 1
@@ -647,3 +674,4 @@ class ASMGenerator:
             print(f"Error during compilation or linking: {e}")
         except FileNotFoundError:
             print("Error: nasm or gcc not found. Make sure they are installed and in your PATH.")
+

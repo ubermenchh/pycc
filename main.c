@@ -1,5 +1,15 @@
 int main() {
-    int a = 1 ? 2 : 4;
-    int b = 0 ? 2 : 3;
-    return a * b;
+    int a = 0;
+    if (a) {
+        int b = 2;
+        return b;
+    } else {
+        int c = 3;
+        if (a < c) {
+            return 4;
+        } else {
+            return 5;
+        }
+    }
+    return a;
 }
