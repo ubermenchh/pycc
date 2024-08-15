@@ -1,15 +1,10 @@
 int main() {
-    int a = 0;
-    if (a) {
-        int b = 2;
-        return b;
-    } else {
-        int c = 3;
-        if (a < c) {
-            return 4;
-        } else {
-            return 5;
-        }
+    int sum = 0;
+    for (int i = 0; i < 10;) {
+        i = i + 1;
+        if (i % 2)
+            continue;
+        sum = sum + i;
     }
-    return a;
+    return sum;
 }

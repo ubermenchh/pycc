@@ -37,3 +37,8 @@ class TokenType(Enum):
     ELSE = auto()
     COLON = auto()
     QUESTION = auto()
+    FOR = auto()
+    WHILE = auto()
+    DO = auto()
+    BREAK = auto()
+    CONTINUE = auto()

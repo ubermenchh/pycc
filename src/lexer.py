@@ -10,8 +10,6 @@ class Token:
     def __repr__(self):
         return f"Token({self.type}, {self.value})"
 
-
-
 def tokenize(text):
     tokens = []
     pattern = "|".join([
@@ -50,6 +48,11 @@ def tokenize(text):
         r"\belse\b", # ELSE 
         r":", # COLON 
         r"\?", # QUESTION
+        f"\bfor\b", # FOR 
+        f"\bwhile\b", # WHILE 
+        f"\bdo\b", # DO 
+        f"\bbreak\b", # BREAK 
+        f"\bcontinue\b", # CONTINUE
     ])
     
     for match in re.finditer(pattern, text):
@@ -86,6 +89,11 @@ def tokenize(text):
         elif value == "else":       token_type = TokenType.ELSE 
         elif value == ":":          token_type = TokenType.COLON 
         elif value == "?":          token_type = TokenType.QUESTION
+        elif value == "for":        token_type = TokenType.FOR 
+        elif value == "while":      token_type = TokenType.WHILE 
+        elif value == "do":         token_type = TokenType.DO 
+        elif value == "break":      token_type = TokenType.BREAK 
+        elif value == "continue":   token_type = TokenType.CONTINUE
         elif value.isdigit():       token_type = TokenType.NUMBER
         elif value.isalpha():  token_type = TokenType.IDENTIFIER 
         elif value.isspace():       token_type = TokenType.WHITESPACE 

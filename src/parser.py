@@ -59,6 +59,26 @@ class Block(ASTNode):
     def __init__(self, statements):
         self.statements = statements
 
+class For(ASTNode):
+    def __init__(self, init, condition, update, stmt):
+        self.init = init  
+        self.condition = condition 
+        self.update = update
+        self.stmt = stmt 
+
+class While(ASTNode):
+    def __init__(self, condition, stmt):
+        self.condition = condition 
+        self.stmt = stmt 
+
+class Do(ASTNode):
+    def __init__(self, stmt, exp):
+        self.stmt = stmt 
+        self.exp = exp 
+
+class Break(ASTNode): pass 
+class Continue(ASTNode): pass
+
 class Parser:
     def __init__(self, tokens):
         self.tokens = tokens 
@@ -139,6 +159,18 @@ class Parser:
             return self.if_statement()
         elif self.check(TokenType.LEFT_BRACE):
             return self.block()
+        elif self.match(TokenType.FOR):
+            return self.for_statement()
+        elif self.match(TokenType.WHILE):
+            return self.while_statement()
+        elif self.match(TokenType.DO):
+            return self.do_while_statement()
+        elif self.match(TokenType.BREAK):
+            self.consume(TokenType.SEMICOLON, "Expected ';' after break.")
+            return Break()
+        elif self.match(TokenType.CONTINUE): 
+            self.consume(TokenType.SEMICOLON, "Expected ';' after continue.")
+            return Continue();
         else:
             return self.expression_statement()
     
@@ -162,26 +194,66 @@ class Parser:
         self.consume(TokenType.LEFT_PAREN, "Expected '(' after if.")
         cond = self.expression()
         self.consume(TokenType.RIGHT_PAREN, "Expected ')' after condition.")
-        #if self.check(TokenType.LEFT_BRACE):
-        #    if_stmt = self.block()
-        #else:
-        #    if_stmt = self.statement()
-        #else_stmt = None
-        #if self.match(TokenType.ELSE):
-        #    if self.match(TokenType.IF): 
-        #        else_stmt = self.if_statement()
-        #    else:
-        #        if self.check(TokenType.LEFT_BRACE):
-        #            else_stmt = self.block()
-        #        else:
-        #            else_stmt = self.statement()
-        #return Conditional(cond, if_stmt, else_stmt)
-        then_branch = self.statement()
+        
+        if self.check(TokenType.LEFT_BRACE):
+            then_branch = self.block()
+        else:
+            then_branch = self.statement()
         else_branch = None 
-        if self.match(TokenType.ELSE):
-            else_branch = self.statement()
+        if self.match(TokenType.ELSE):    
+            if self.check(TokenType.LEFT_BRACE):
+                else_branch = self.block()
+            else:
+                else_branch = self.statement()
         return Conditional(cond, then_branch, else_branch)
     
+    def for_statement(self):
+        self.consume(TokenType.LEFT_PAREN, "Expected '(' after for.")
+        if self.match(TokenType.SEMICOLON):
+            init = None 
+        else:
+            init = self.declaration_or_statement()
+        
+        if self.match(TokenType.SEMICOLON):
+            condition = None
+        else:
+            condition = self.expression()
+            self.consume(TokenType.SEMICOLON, "Expected ';' after condition.")
+        
+        if self.match(TokenType.RIGHT_PAREN):
+            update = None
+        else:
+            update = self.expression()
+            self.consume(TokenType.RIGHT_PAREN, "Expected ')' before for block.")
+        
+        if self.check(TokenType.LEFT_BRACE):
+            stmt = self.block()
+        else:
+            stmt = self.statement()
+        return For(init, condition, update, stmt) 
+    
+    def while_statement(self):
+        self.consume(TokenType.LEFT_PAREN, "Expected '(' after while.")
+        exp = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expected ')' after condition.")
+        if self.check(TokenType.LEFT_BRACE):
+            stmt = self.block()
+        else:
+            stmt = self.statement()
+        return While(exp, stmt)
+
+    def do_while_statement(self):
+        if self.check(TokenType.LEFT_BRACE):
+            stmt = self.block()
+        else:
+            stmt = self.statement()
+        self.consume(TokenType.WHILE, "Expected 'while' after do block.")
+        self.consume(TokenType.LEFT_PAREN, "Expected '(' after while.")
+        exp = self.expression()
+        self.consume(TokenType.RIGHT_PAREN, "Expected ')' after condition.") 
+        self.consume(TokenType.SEMICOLON, "Expected ';' after while.")
+        return Do(stmt, exp)
+
     def expression(self):
         return self.assignment()
 
@@ -286,7 +358,7 @@ class Parser:
 
     def term(self):
         factor = self.factor()
-        while self.match(TokenType.STAR, TokenType.SLASH):
+        while self.match(TokenType.STAR, TokenType.SLASH, TokenType.PERCENT):
             op = self.previous()
             next_factor = self.factor()
             factor = BinaryOps(op, factor, next_factor)
@@ -382,7 +454,7 @@ class ASTPrinter:
     def print_BinaryOps(self, node):
         result = self.indented(f"BinaryOps: {node.op.type.name}") + "\n"
         result += self.print(node.left) + "\n"
-        result += self.print(node.right)
+        result += self.print(node.right) 
         return result
 
     def print_Declaration(self, node):
@@ -441,12 +513,61 @@ class ASTPrinter:
         else:
             result += self.print(node.statements)
         self.indent_level -= 1
+        return result 
+
+    def print_For(self, node):
+        result = self.indented("For: \n")
+        self.indent_level += 1
+        result += self.indented("Init: \n")
+        self.indent_level += 1
+        result += self.print(node.init)
+        self.indent_level -= 1
+        result += self.indented("Condition: \n")
+        self.indent_level += 1
+        result += self.print(node.condition) + "\n"
+        self.indent_level -= 1 
+        result += self.indented("Update: \n")
+        self.indent_level += 1
+        result += self.print(node.update) + "\n"
+        self.indent_level -= 1
+        result += self.print(node.stmt)
+        self.indent_level -= 1 
+        return result
+
+    def print_While(self, node):
+        result = self.indented("While:\n")
+        self.indent_level += 1 
+        result += self.indented("Condition:\n")
+        self.indent_level += 1 
+        result += self.print(node.condition) + "\n"
+        self.indent_level -= 1 
+        result += self.print(node.stmt)
+        self.indent_level -= 1
+        return result
+
+    def print_Do(self, node):
+        result = self.indented("Do:\n")
+        self.indent_level += 1 
+        result += self.print(node.stmt) + "\n"
+        result += self.indented("While:\n")
+        self.indent_level += 1
+        result += self.print(node.exp) + "\n"
+        self.indent_level -= 2
+        return result
+    
+    def print_Break(self, node):
+        result = self.indented("Break\n")
+        return result 
+
+    def print_Continue(self, node):
+        result = self.indented("Continue\n")
         return result
 
 class ASMGenerator:
     def __init__(self):
         self.assembly = []
         self.scopes = []
+        self.loop_stack = []
         self.stack_index = 0
         self.label_count = 0
     
@@ -458,6 +579,12 @@ class ASMGenerator:
         if scope:
             self.stack_index -= 8 * len(scope) 
             self.assembly.append(f"    add rsp, {8 * len(scope)}")
+
+    def enter_loop(self, start_label, end_label):
+        self.loop_stack.append((start_label, end_label))
+
+    def exit_loop(self):
+        self.loop_stack.pop()
 
     def find_variable(self, name):
         for scope in reversed(self.scopes):
@@ -497,7 +624,7 @@ class ASMGenerator:
 
         # Function epilogue
         self.assembly.extend([
-            f"{self.current_function}:"
+            f"{self.current_function}:",
             "    mov rsp, rbp",
             "    pop rbp",
             "    ret"
@@ -549,9 +676,9 @@ class ASMGenerator:
         self.assembly.append("    push rax")
 
     def generate_BinaryOps(self, node):
-        self.generate(node.left)
-        self.assembly.append("    push rax")
         self.generate(node.right)
+        self.assembly.append("    push rax")
+        self.generate(node.left)
         self.assembly.append("    pop rbx")
 
         op_map = {
@@ -591,7 +718,7 @@ class ASMGenerator:
 
         if node.op.type in compare_ops:
             self.assembly.extend([
-                "    cmp rbx, rax",
+                "    cmp rax, rbx",
                 f"    {compare_ops[node.op.type]} al",
                 "    movzx rax, al"
             ])
@@ -619,8 +746,8 @@ class ASMGenerator:
             self.assembly.append(f"    mov qword [rbp - {self.stack_index}], 0")
 
     def generate_Assign(self, node):
-        offset = self.find_variable(node.name.value)
         self.generate(node.exp)
+        offset = self.find_variable(node.name.value)
         self.assembly.append(f"    mov [rbp - {offset}], rax")
 
     def generate_Variable(self, node):
@@ -645,6 +772,86 @@ class ASMGenerator:
             self.generate(node.else_stmt)
 
         self.assembly.append(f"{end_label}:")
+
+    def generate_For(self, node):
+        loop_start = self.new_label("for_start")
+        loop_end = self.new_label("for_end")
+
+        self.enter_loop(loop_start, loop_end)
+        # Generate Initialization 
+        if node.init:
+            self.generate(node.init)
+        self.assembly.append(f"{loop_start}:")
+
+        # Generate Condition 
+        if node.condition:
+            self.generate(node.condition)
+            self.assembly.extend([
+                "    cmp rax, 0",
+                f"    je {loop_end}"
+            ])
+
+        # Generate loop body 
+        self.generate(node.stmt)
+
+        # Generate Update 
+        if node.update:
+            self.generate(node.update)
+
+        # jump back to start 
+        self.assembly.append(f"    jmp {loop_start}")
+        # end of loop
+        self.assembly.append(f"{loop_end}:")
+        self.exit_loop()
+
+    def generate_While(self, node):
+        loop_start = self.new_label("while_start")
+        loop_end = self.new_label("while_end")
+
+        self.enter_loop(loop_start, loop_end)
+        self.assembly.append(f"{loop_start}:") # loop start
+        # Generate Condition 
+        if node.condition:
+            self.generate(node.condition)
+            self.assembly.extend([
+                "    cmp rax, 0",
+                f"    je {loop_end}"
+            ])
+        # Generate loop body 
+        self.generate(node.stmt)
+        # jump back to start 
+        self.assembly.append(f"    jmp {loop_start}")
+        # end of loop 
+        self.assembly.append(f"{loop_end}:")
+        self.exit_loop()
+
+    def generate_Do(self, node):
+        loop_start = self.new_label("do_start")
+        loop_end = self.new_label("do_end")
+
+        self.enter_loop(loop_start, loop_end)
+        self.assembly.append(f"{loop_start}:") # loop start 
+        self.generate(node.stmt) # loop body
+
+        self.generate(node.exp) # while condition
+        self.assembly.extend([
+            "    cmp rax, 0",
+            f"    jne {loop_start}" # jump back to start if condition is true
+        ])
+        self.assembly.append(f"{loop_end}:") # loop end
+        self.exit_loop()
+
+    def generate_Break(self, node):
+        if not self.loop_stack:
+            raise Exception("Break statement outside of loop")
+        _, end_label = self.loop_stack[-1]
+        self.assembly.append(f"    jmp {end_label}")
+
+    def generate_Continue(self, node):
+        if not self.loop_stack:
+            raise Exception("Continue statement outside of loop")
+        start_label, _ = self.loop_stack[-1]
+        self.assembly.append(f"    jmp {start_label}")
 
     def new_label(self, prefix):
         self.label_count += 1
