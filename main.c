@@ -1,10 +1,18 @@
+int putchar(int c);
+
 int main() {
-    int sum = 0;
-    for (int i = 0; i < 10;) {
-        i = i + 1;
-        if (i % 2)
-            continue;
-        sum = sum + i;
-    }
-    return sum;
+    putchar(72);
+    putchar(101);
+    putchar(108);
+    putchar(108);
+    putchar(111);
+    putchar(44);
+    putchar(32);
+    putchar(87);
+    putchar(111);
+    putchar(114);
+    putchar(108);
+    putchar(100);
+    putchar(33);
+    putchar(10);
 }

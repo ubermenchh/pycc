@@ -5,8 +5,8 @@ class ASTNode:
     pass
 
 class Program(ASTNode):
-    def __init__(self, function):
-        self.function = function 
+    def __init__(self, function_list):
+        self.function_list = function_list 
 
 class Function(ASTNode):
     def __init__(self, return_type, name, parameters, body):
@@ -79,6 +79,11 @@ class Do(ASTNode):
 class Break(ASTNode): pass 
 class Continue(ASTNode): pass
 
+class FunctionCall(ASTNode):
+    def __init__(self, name, params):
+        self.name = name 
+        self.params = params
+
 class Parser:
     def __init__(self, tokens):
         self.tokens = tokens 
@@ -113,22 +118,33 @@ class Parser:
     def parse(self): return self.program()
     
     def program(self):
-        return Program(self.function())
+        func_list = []
+        while self.check(TokenType.INT):
+            func_list.append(self.function())
+        return Program(func_list)
 
     def function(self):
-        self.consume(TokenType.INT, "Expected 'int' as return type.")
+        type = self.consume(TokenType.INT, "Expected function return type.").value
         name = self.consume(TokenType.IDENTIFIER, "Expected function name.").value
         self.consume(TokenType.LEFT_PAREN, "Expected '(' after function name.")
         parameters = self.parameter_list()
         self.consume(TokenType.RIGHT_PAREN, "Expected ')' after parameters.")
-        body = self.block()
-        return Function("int", name, parameters, body)
+        body = None 
+        if self.match(TokenType.SEMICOLON):
+            return Function(type, name, parameters, body)
+        elif self.check(TokenType.LEFT_BRACE):
+            body = self.block()
+            return Function(type, name, parameters, body)
+        else:
+            raise Exception("Expected ';' or '{' after function name.")
 
     def parameter_list(self):
         params = []
-        if self.match(TokenType.IDENTIFIER):
+        if self.match(TokenType.INT):
+            self.consume(TokenType.IDENTIFIER, "Expected variable name.")
             params.append(Variable(self.previous()))
             while self.match(TokenType.COMMA):
+                self.consume(TokenType.INT, "Expected variable type.")
                 self.consume(TokenType.IDENTIFIER, "Expected variable name.")
                 params.append(Variable(self.previous()))
         return params
@@ -376,9 +392,29 @@ class Parser:
         elif self.match(TokenType.NUMBER):
             return Number(self.previous())
         elif self.match(TokenType.IDENTIFIER):
-            return Variable(self.previous())
+            if self.check(TokenType.LEFT_PAREN):
+                return self.function_call()
+            else:
+                return Variable(self.previous())
         else:
             return print("Failed!")
+    
+    def argument_list(self):
+        args = [self.expression()]
+        while self.match(TokenType.COMMA):
+            if len(args) > 255:
+                raise Exception("Cannot have more than 255 arguments.")
+            args.append(self.expression())
+        return args
+
+    def function_call(self):
+        name = self.previous()
+        args = []
+        self.consume(TokenType.LEFT_PAREN, "Expected '(' after function name.")
+        if not self.check(TokenType.RIGHT_PAREN):
+            args = self.argument_list()
+        self.consume(TokenType.RIGHT_PAREN, "Expected ')' after parameters.")
+        return FunctionCall(name, args)
 
     def unary(self):
         if self.match(TokenType.MINUS, TokenType.LOGICAL_NEGATION, TokenType.BITWISE_COMPLEMENT):
@@ -416,25 +452,44 @@ class ASTPrinter:
     def print_Program(self, node):
         result = self.indented("Program\n")
         self.indent_level += 1
-        result += self.print(node.function)
+        for function in node.function_list:
+            result += self.print(function)
         self.indent_level -= 1
         return result 
 
     def print_Function(self, node):
-        result = self.indented(f"Function: {node.return_type} {node.name}\n")
+        if node.body:
+            result = self.indented(f"Function: {node.return_type} {node.name}\n")
+        else:
+            result = self.indented(f"Function Declaration: {node.return_type} {node.name}\n")
+
         self.indent_level += 1
         if node.parameters:
-            result += self.indented("Parameters:\n")
+            result += self.indented("Parameters: \n")
             self.indent_level += 1
             for param in node.parameters:
-                result += self.indented(f"{param}\n")
+                result += self.print(param) + "\n"
             self.indent_level -= 1
-        result += self.indented("Body:\n")
-        self.indent_level += 1
-        for statement in node.body.statements:
-            result += self.print(statement) + "\n"
+        if node.body:
+            result += self.indented("Body:\n")
+            self.indent_level += 1
+            for statement in node.body.statements:
+                result += self.print(statement) + "\n"
+            self.indent_level -= 1
         self.indent_level -= 1
         return result 
+    
+    def print_FunctionCall(self, node):
+        result = self.indented(f"FunctionCall: {node.name.value}\n")
+        self.indent_level += 1 
+        if node.params:
+            result += self.indented(f"Arguments: \n")
+            self.indent_level += 1
+            for p in node.params:
+                result += self.print(p) + "\n"
+            self.indent_level -= 1
+        self.indent_level -= 1
+        return result
 
     def print_ReturnStatement(self, node):
         result = self.indented("Return:\n")
@@ -471,6 +526,7 @@ class ASTPrinter:
         return self.indented(f"Variable: {node.name.value}")
 
     def print_Assign(self, node):
+        print(node.name)
         result = self.indented(f"Assign: {node.name.value}\n")
         self.indent_level += 1
         result += self.indented("Value:\n")
@@ -570,6 +626,8 @@ class ASMGenerator:
         self.loop_stack = []
         self.stack_index = 0
         self.label_count = 0
+        self.arg_registers = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
+        self.external_functions = set()
     
     def enter_scope(self): 
         self.scopes.append({})
@@ -605,12 +663,19 @@ class ASMGenerator:
             "default rel",
             "section .text",
             "global main",
-            "extern printf"
         ])
-        self.generate(node.function)
+        for function in node.function_list:
+            self.generate(function)
+
+        # add external function declaratiions 
+        for func in self.external_functions:
+            self.assembly.insert(3, f"extern {func}")
+
         return "\n".join(self.assembly)
 
     def generate_Function(self, node):
+        if not node.body: return
+
         self.current_function = self.new_label("function_end") # function end label
         self.assembly.extend([
             f"{node.name}:",
@@ -619,6 +684,18 @@ class ASMGenerator:
         ])
         
         self.enter_scope()
+
+        # handle parameters 
+        for i, param in enumerate(node.parameters):
+            self.stack_index += 8 
+            self.scopes[-1][param.name] = self.stack_index 
+            if i < len(self.arg_registers):
+                self.assembly.append(f"    mov [rbp - {self.stack_index}], {self.arg_registers[i]}")
+            else:
+                offset = (i - len(self.arg_registers) + 2) * 8 
+                self.assembly.append(f"    mov rax, [rbp - offset]")
+                self.assembly.append(f"    mov [rbp - {self.stack_index}], rax")
+
         self.generate_statements(node.body)
         self.exit_scope()
 
@@ -629,6 +706,32 @@ class ASMGenerator:
             "    pop rbp",
             "    ret"
         ])
+
+    def generate_FunctionCall(self, node): 
+        # check if external function 
+        if node.name.value not in ["main"] and not any(func.name.value == node.name.value for func in self.scopes):
+            self.external_functions.add(node.name.value)
+
+        # evaluate and push arguments in reverse order 
+        for arg in reversed(node.params):
+            self.generate(arg)
+
+        # pop arguments into the appropriate registers 
+        for i, _ in enumerate(node.params):
+            if i < len(self.arg_registers):
+                self.assembly.append(f"    pop {self.arg_registers[i]}")
+
+        # align stack to 16 bytes 
+        stack_align = (len(node.params) % 2) * 8
+        if stack_align:
+            self.assembly.append("    sub rsp, 8")
+
+        # call the function 
+        self.assembly.append(f"    call {node.name.value}")
+
+        # restore stack alignment if adjusted 
+        if stack_align:
+            self.assembly.append("    add rsp, 8")
 
     def generate_Block(self, node):
         self.enter_scope()
@@ -645,10 +748,14 @@ class ASMGenerator:
     def generate_ReturnStatement(self, node):
         if node.expression:
             self.generate(node.expression)
+            self.assembly.append("    pop rax")
+        else:
+            self.assembly.append("    xor rax, rax") # return 0 if no expression
         self.assembly.append(f"    jmp {self.current_function}")
 
     def generate_Number(self, node):
         self.assembly.append(f"    mov rax, {node.value.value}")
+        self.assembly.append("    push rax")
 
     def generate_UnaryOps(self, node):
         self.generate(node.right)
@@ -677,9 +784,9 @@ class ASMGenerator:
 
     def generate_BinaryOps(self, node):
         self.generate(node.right)
-        self.assembly.append("    push rax")
+        self.assembly.append("    push rax") # save left operand result
         self.generate(node.left)
-        self.assembly.append("    pop rbx")
+        self.assembly.append("    pop rbx") # retrieve left operand result
 
         op_map = {
             TokenType.PLUS: "    add rax, rbx",

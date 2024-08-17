@@ -42,3 +42,4 @@ class TokenType(Enum):
     DO = auto()
     BREAK = auto()
     CONTINUE = auto()
+    COMMA = auto()

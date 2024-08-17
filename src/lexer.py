@@ -25,7 +25,6 @@ def tokenize(text):
         r"\s+", # WHITESPACE
         r"-", # MINUS 
         r"~", # BITWISE_COMPLEMENT 
-        r"!", # LOGICAL_NEGATION
         r"\+", # PLUS 
         r"\*", # STAR 
         r"/", # SLASH
@@ -33,9 +32,7 @@ def tokenize(text):
         r"\|\|", # OR 
         r"==", # EQUAL 
         r"!=", # NOT_EQUAL
-        r"<", # LESS_THAN 
         r"<=", # LESS_THAN_OR_EQUAL
-        r">", # GREATER_THAN
         r">=", # GREATER_THAN_OR_EQUAL
         r"%", # PERCENT 
         r"&", # BITWISE_AND
@@ -44,6 +41,9 @@ def tokenize(text):
         r"<<", # BITWISE_SHIFT_LEFT
         r">>", # BITWISE_SHIFT_RIGHT
         r"=", # ASSIGN
+        r"!", # LOGICAL_NEGATION
+        r"<", # LESS_THAN 
+        r">", # GREATER_THAN
         r"\bif\b", # IF 
         r"\belse\b", # ELSE 
         r":", # COLON 
@@ -53,6 +53,7 @@ def tokenize(text):
         f"\bdo\b", # DO 
         f"\bbreak\b", # BREAK 
         f"\bcontinue\b", # CONTINUE
+        f",", # COMMA
     ])
     
     for match in re.finditer(pattern, text):
@@ -94,9 +95,10 @@ def tokenize(text):
         elif value == "do":         token_type = TokenType.DO 
         elif value == "break":      token_type = TokenType.BREAK 
         elif value == "continue":   token_type = TokenType.CONTINUE
+        elif value == ",":          token_type = TokenType.COMMA
         elif value.isdigit():       token_type = TokenType.NUMBER
-        elif value.isalpha():  token_type = TokenType.IDENTIFIER 
         elif value.isspace():       token_type = TokenType.WHITESPACE 
+        elif re.match(r"\b[a-zA-Z]\w*\b", value):       token_type = TokenType.IDENTIFIER 
         else:                       raise ValueError(f"Unexpected Token: {value}")
 
         if token_type != TokenType.WHITESPACE:
