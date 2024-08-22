@@ -79,6 +79,12 @@ class Do(ASTNode):
 class Break(ASTNode): pass 
 class Continue(ASTNode): pass
 
+class FunctionDeclaration(ASTNode):
+    def __init__(self, type, name, params):
+        self.type = type 
+        self.name = name 
+        self.params = params
+
 class FunctionCall(ASTNode):
     def __init__(self, name, params):
         self.name = name 
@@ -131,7 +137,7 @@ class Parser:
         self.consume(TokenType.RIGHT_PAREN, "Expected ')' after parameters.")
         body = None 
         if self.match(TokenType.SEMICOLON):
-            return Function(type, name, parameters, body)
+            return FunctionDeclaration(type, name, parameters)
         elif self.check(TokenType.LEFT_BRACE):
             body = self.block()
             return Function(type, name, parameters, body)
@@ -457,12 +463,8 @@ class ASTPrinter:
         self.indent_level -= 1
         return result 
 
-    def print_Function(self, node):
-        if node.body:
-            result = self.indented(f"Function: {node.return_type} {node.name}\n")
-        else:
-            result = self.indented(f"Function Declaration: {node.return_type} {node.name}\n")
-
+    def print_Function(self, node):        
+        result = self.indented(f"Function: {node.return_type} {node.name}\n")    
         self.indent_level += 1
         if node.parameters:
             result += self.indented("Parameters: \n")
@@ -478,7 +480,11 @@ class ASTPrinter:
             self.indent_level -= 1
         self.indent_level -= 1
         return result 
-    
+
+    def print_FunctionDeclaration(self, node):
+        result = self.indented(f"Function Declaration: {node.type} {node.name}\n")
+        return result
+
     def print_FunctionCall(self, node):
         result = self.indented(f"FunctionCall: {node.name.value}\n")
         self.indent_level += 1 
@@ -622,12 +628,14 @@ class ASTPrinter:
 class ASMGenerator:
     def __init__(self):
         self.assembly = []
-        self.scopes = []
+        self.scopes = [{}]
         self.loop_stack = []
         self.stack_index = 0
         self.label_count = 0
         self.arg_registers = ["rdi", "rsi", "rdx", "rcx", "r8", "r9"]
         self.external_functions = set()
+        self.function_prototypes = {}
+        self.defined_functions = set()
     
     def enter_scope(self): 
         self.scopes.append({})
@@ -664,16 +672,34 @@ class ASMGenerator:
             "section .text",
             "global main",
         ])
+
+        # generate code for all functions
         for function in node.function_list:
-            self.generate(function)
+            if isinstance(function, FunctionDeclaration):
+                self.function_prototypes[function.name] = len(function.params)
+            elif isinstance(function, Function):
+                self.defined_functions.add(function.name)
+                self.function_prototypes[function.name] = len(function.parameters)
+        
+        for function in node.function_list:
+            if isinstance(function, Function):
+                self.generate(function)
 
-        # add external function declaratiions 
-        for func in self.external_functions:
-            self.assembly.insert(3, f"extern {func}")
+        # remove defined functions from prototypes 
+        for func in self.defined_functions:
+            self.function_prototypes.pop(func, None)
 
+        # add external function declaratiions at the beginning, after the initial directives
+        extern_declarations = [f"extern {func}" for func in self.function_prototypes.keys()]
+        self.assembly = self.assembly[:3] + extern_declarations + self.assembly[3:] 
+        
         return "\n".join(self.assembly)
+    
+    def generate_FunctionDeclaration(self, node):
+        self.scopes[0][node.name] = "function"
 
     def generate_Function(self, node):
+        self.scopes[0][node.name] = "function"
         if not node.body: return
 
         self.current_function = self.new_label("function_end") # function end label
@@ -684,17 +710,13 @@ class ASMGenerator:
         ])
         
         self.enter_scope()
-
-        # handle parameters 
+        
+        # handle function parameters 
         for i, param in enumerate(node.parameters):
             self.stack_index += 8 
-            self.scopes[-1][param.name] = self.stack_index 
+            self.scopes[-1][param.name.value] = self.stack_index 
             if i < len(self.arg_registers):
                 self.assembly.append(f"    mov [rbp - {self.stack_index}], {self.arg_registers[i]}")
-            else:
-                offset = (i - len(self.arg_registers) + 2) * 8 
-                self.assembly.append(f"    mov rax, [rbp - offset]")
-                self.assembly.append(f"    mov [rbp - {self.stack_index}], rax")
 
         self.generate_statements(node.body)
         self.exit_scope()
@@ -708,29 +730,31 @@ class ASMGenerator:
         ])
 
     def generate_FunctionCall(self, node): 
-        # check if external function 
-        if node.name.value not in ["main"] and not any(func.name.value == node.name.value for func in self.scopes):
-            self.external_functions.add(node.name.value)
+        #param_count = self.function_prototypes.get(node.name.value, len(node.params))
+        param_count = len(node.params)
 
         # evaluate and push arguments in reverse order 
         for arg in reversed(node.params):
             self.generate(arg)
+            self.assembly.append("    push rax")
 
         # pop arguments into the appropriate registers 
-        for i, _ in enumerate(node.params):
-            if i < len(self.arg_registers):
-                self.assembly.append(f"    pop {self.arg_registers[i]}")
-
+        for i in range(min(param_count, len(self.arg_registers))):
+            self.assembly.append(f"    pop {self.arg_registers[i]}")
+        
         # align stack to 16 bytes 
-        stack_align = (len(node.params) % 2) * 8
-        if stack_align:
+        if param_count % 2 != 0:
             self.assembly.append("    sub rsp, 8")
 
         # call the function 
         self.assembly.append(f"    call {node.name.value}")
 
-        # restore stack alignment if adjusted 
-        if stack_align:
+        # restore stack alignment if adjusted
+        #stack_cleanup = max(0, param_count - len(self.arg_registers)) * 8
+        #if stack_cleanup > 0 or param_count % 2 == 1:
+        #    cleanup_amount = stack_cleanup + (8 if param_count % 2 == 1 else 0)
+        #    self.assembly.append(f"    add rsp, {cleanup_amount}")
+        if param_count % 2 != 0:
             self.assembly.append("    add rsp, 8")
 
     def generate_Block(self, node):
@@ -748,14 +772,12 @@ class ASMGenerator:
     def generate_ReturnStatement(self, node):
         if node.expression:
             self.generate(node.expression)
-            self.assembly.append("    pop rax")
         else:
             self.assembly.append("    xor rax, rax") # return 0 if no expression
         self.assembly.append(f"    jmp {self.current_function}")
 
     def generate_Number(self, node):
         self.assembly.append(f"    mov rax, {node.value.value}")
-        self.assembly.append("    push rax")
 
     def generate_UnaryOps(self, node):
         self.generate(node.right)
@@ -783,33 +805,57 @@ class ASMGenerator:
         self.assembly.append("    push rax")
 
     def generate_BinaryOps(self, node):
-        self.generate(node.right)
-        self.assembly.append("    push rax") # save left operand result
+        if node.op.type in [TokenType.OR, TokenType.AND]:
+            end_label = self.new_label("logical_end")
+            self.generate(node.left)
+            self.assembly.append("    pop rax")
+            self.assembly.append("    cmp rax, 0")
+
+            if node.op.type == TokenType.OR:
+                self.assembly.append(f"    jne {end_label}")
+            else:
+                self.assembly.append(f"    je {end_label}")
+
+            self.generate(node.right)
+            self.assembly.append(f"{end_label}:")
+            return
+
         self.generate(node.left)
+        self.assembly.append("    push rax") # save left operand result
+        self.generate(node.right)
         self.assembly.append("    pop rbx") # retrieve left operand result
 
         op_map = {
             TokenType.PLUS: "    add rax, rbx",
-            TokenType.MINUS: "    sub rax, rbx",
+            TokenType.MINUS: [
+                "    sub rbx, rax",
+                "    mov rax, rbx"
+            ],
             TokenType.STAR: "    imul rbx",
             TokenType.SLASH: [
-                "    xor rdx, rdx",
-                "    idiv rbx",
+                "    mov rcx, rax", # save divisor
+                "    mov rax, rbx", # move dividend to rax 
+                "    cqo",          # sign-extend rax into rdx:rax
+                "    idiv rcx",     # divide rdx:rax by rcx
             ],
             TokenType.PERCENT:  [
-                "    xor rdx, rdx",
-                "    idiv rbx",
-                "    mov rax, rdx"
+                "    mov rcx, rax", # save divisor
+                "    mov rax, rbx", # move dividend to rax 
+                "    cqo",          # sign-extend rax into rdx:rax 
+                "    idiv rcx",     # divide rdx:rax by rcx 
+                "    mov rax, rdx"  # move remainder to rax
             ],
             TokenType.BITWISE_OR: "    or rax, rbx",
             TokenType.BITWISE_AND: "    and rax, rbx",
             TokenType.BITWISE_XOR: "    xor rax, rbx",
             TokenType.BITWISE_SHIFT_LEFT: [
                 "    mov rcx, rbx",
+                "    mov rax, rbx",
                 "    shl rax, cl"
             ],
             TokenType.BITWISE_SHIFT_RIGHT:  [
                 "    mov rcx, rbx",
+                "    mov rax, rbx",
                 "    shr rax, cl"
             ]
         }
@@ -839,7 +885,6 @@ class ASMGenerator:
             else:
                 raise NotImplementedError(f"Binary operation {node.op.type} not implemented.")
 
-        self.assembly.append("    push rax")
 
     def generate_Declaration(self, node):
         self.stack_index += 8 
