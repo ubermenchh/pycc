@@ -1,9 +1,9 @@
+from src.codegen import ASMGenerator
 from src.lexer import *
 from src.parser import *
-from src.codegen import ASMGenerator
+from src.codegen import *
 
 import sys
-import argparse
 
 def process(file_path, args):
     try: 
@@ -11,11 +11,10 @@ def process(file_path, args):
             text = f.read()
 
         if args.all:
-            args.lex = args.parse = args.codegen = True
+            args.lex = args.parse = args.print_ast = args.codegen = True
     
         tokens = tokenize(text)
         if args.lex:
-            print()
             print("---------- TOKENS ----------")
             for token in tokens:
                 print(token)
@@ -25,7 +24,6 @@ def process(file_path, args):
 
         printer = ASTPrinter()
         if args.parse:
-            print()
             print("---------- Abstract Syntax Tree ----------")
             print(printer.print(ast))
             print()
@@ -34,7 +32,6 @@ def process(file_path, args):
         asm_code = generator.generate(ast)
 
         if args.codegen:
-            print()
             print("---------- Assembly Generated ----------")
             print(asm_code)
             print()
@@ -49,17 +46,24 @@ def process(file_path, args):
         print(f"Error during compilation: {str(e)}")
         sys.exit(1)
 
-if __name__=="__main__":
-    parser = argparse.ArgumentParser(
-        description="Tiny C Compiler written in Python",
-        formatter_class=argparse.RawTextHelpFormatter
-    )
+with open("main.c", "r") as f:
+    text = f.read()
 
-    parser.add_argument("input_file", help="Input source file to compile")
-    parser.add_argument("-l", "--lex", action="store_true", help="Print tokens from lexical analysis")
-    parser.add_argument("-p", "--parse", action="store_true", help="Show parsing completion status")
-    parser.add_argument("-cg", "--codegen", action="store_true", help="Print generated assembly code")
-    parser.add_argument("--all", action="store_true", help="Enable all output phases")
+print(text)
 
-    args = parser.parse_args()
-    process(args.input_file, args)
+tokens = tokenize(text)
+for token in tokens:
+    print(token)
+
+parser = Parser(tokens)
+ast = parser.parse()
+
+printer = ASTPrinter()
+generator = ASMGenerator()
+
+print(printer.print(ast))
+asm_code = generator.generate(ast)
+
+print(asm_code)
+
+generator.emit()
